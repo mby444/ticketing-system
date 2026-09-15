@@ -5,17 +5,6 @@ import { prisma } from "@/lib/prisma";
 const HomePage = async () => {
   let users = await prisma.user.findMany();
 
-  if (users.length === 0) {
-    await prisma.user.create({
-      data: {
-        email: "hello@quickticket.com",
-        name: "Admin User",
-        password: "password",
-      },
-    });
-    users = await prisma.user.findMany();
-  }
-
   return (
     <main className="flex flex-col text-center items-center justify-center min-h-screen px-4">
       <FaTicketAlt className="mx-auto mb-4 text-red-600" size={60} />
