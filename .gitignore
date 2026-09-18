@@ -43,6 +43,9 @@ next-env.d.ts
 # Sentry Config File
 .env.sentry-build-plugin
 
+# Prisma
 /app/generated/prisma
-
 /generated/prisma
+
+# Dev scripts
+*.bat
