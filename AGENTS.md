@@ -7,3 +7,42 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+# Repository guide
+
+Single Next.js 16 (App Router) app — a support ticket system ("QuickTicket"). Not a monorepo. No test framework, no CI, no pre-commit hooks. `CLAUDE.md` is just `@AGENTS.md`; this file is canonical.
+
+## Structure
+
+- `app/` — routes: `/`, `/tickets`, `/tickets/[id]`, `/tickets/new`. Server components call server actions directly.
+- `actions/ticket.actions.ts` — every server action (`"use server"`); mutations call `revalidatePath("/tickets")`.
+- `lib/prisma.ts` — Prisma singleton; `lib/auth.ts` — jose JWT + `auth-token` cookie helpers; `utils/sentry.ts` — `logEvent()` wrapper used throughout instead of raw Sentry calls.
+- Path alias `@/*` → repo root (see `tsconfig.json`).
+
+## Commands
+
+- On this machine PowerShell blocks `npm.ps1`/`npx.ps1` (execution policy) — use **`npm.cmd` / `npx.cmd`** or commands fail immediately.
+- Dev: `npm.cmd run dev` · Lint: `npm.cmd run lint` (flat ESLint + `eslint-config-next`, lints the whole repo).
+- Typecheck has no script: `npx.cmd tsc --noEmit`.
+- There are no tests. Verification = lint → typecheck → `npm.cmd run build`.
+- Reset + reseed DB: `db_fresh.bat` (= `prisma migrate reset && prisma db seed && prisma generate`). **Destructive**: the seed (`prisma/seed.ts`) deletes all users and tickets, and `migrate reset` re-runs the seed anyway. `*.bat` files are gitignored.
+- Run a one-off script: `npx.cmd tsx <file>` — `tsx` is **not** installed locally; npx downloads it on first use (also required by the configured seed command, so seeding needs network).
+
+## Prisma 7 (differs from Prisma ≤6 defaults)
+
+- Config file is **`prisma7.config.ts`** (not `prisma.config.ts`) — holds the datasource URL and the seed command. Trust it over `PRISMA7_SETUP.md`, which is just a saved copy of the Prisma docs guide.
+- Client is generated from `prisma/schema.prisma` into **`generated/prisma/`** — gitignored. Import it as `@/generated/prisma/client`. After a fresh clone or any schema change run `npx.cmd prisma generate` (also wired to `postinstall`); missing/stale generated files cause confusing TS errors.
+- Postgres via driver adapter: `lib/prisma.ts` builds a `pg.Pool` from `DATABASE_URL` and passes `PrismaPg` to `PrismaClient`. The schema has no `url` — don't add one.
+- Schema changes: `npx.cmd prisma migrate dev --name <name>` (migrations live in `prisma/migrations/`).
+- Prisma reference skills are pinned by hash in `skills-lock.json` and mirrored into `.agents/skills/`, `.claude/skills/`, `.windsurf/skills/` (all tracked). Use them for Prisma questions; don't hand-edit the mirrors.
+
+## Environment
+
+`.env` is gitignored but present locally; required vars: `DATABASE_URL`, `AUTH_SECRET`, `SENTRY_AUTH_TOKEN`. Sentry DSN is hardcoded in `sentry.*.config.ts`; `next.config.ts` wraps the build with `withSentryConfig` (tunnel route `/monitoring`), so builds attempt source-map upload.
+
+## Known state — don't assume you caused these
+
+- **Baseline is not green**: `npm run lint` reports 3 errors (`prefer-const` in `app/page.tsx`, `no-explicit-any` in `lib/auth.ts` and `utils/sentry.ts`), and `tsc --noEmit` fails in `actions/ticket.actions.ts` (ticket `create` omits the required `user` relation / `userId`).
+- **Auth is half-wired**: `lib/auth.ts` exists, but `lib/current-user.ts`, `actions/auth.actions.ts`, and `/login` `/register` routes do **not** — they are referenced only in commented-out code in `Navbar`, `LogoutButton`, and the ticket pages. Navbar's Login/Register links 404. Un-commenting those imports will not compile.
+- `app/sentry-example-page/` and `app/api/sentry-example-api/` are leftover Sentry scaffold, not real features.
+- `script.ts` is a scratch file for experimenting with the Prisma client.
