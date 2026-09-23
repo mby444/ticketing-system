@@ -1,14 +1,14 @@
 import { getTickets } from "@/actions/ticket.actions";
-// import { getCurrentUser } from "@/lib/current-user";
 import { redirect } from "next/navigation";
 import TicketItem from "@/components/TicketItem";
+import { getCurrentUser } from "@/lib/current-user";
 
 const TicketsPage = async () => {
-  //   const user = await getCurrentUser();
+  const user = await getCurrentUser();
 
-  //   if (!user) {
-  //     redirect("/login");
-  //   }
+  if (!user) {
+    redirect("/login");
+  }
 
   const tickets = await getTickets();
 

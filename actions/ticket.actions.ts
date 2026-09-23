@@ -1,5 +1,6 @@
 "use server";
 
+import { getCurrentUser } from "@/lib/current-user";
 import { prisma } from "@/lib/prisma";
 import { logEvent } from "@/utils/sentry";
 import * as Sentry from "@sentry/nextjs";
@@ -15,6 +16,16 @@ export const createTicket = async (
   formData: FormData,
 ) => {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      logEvent("Unauthorized ticket creation attempt", "ticket", {}, "warning");
+
+      return {
+        success: false,
+        message: "You must be logged in to create a ticket",
+      };
+    }
+
     const subject = formData.get("subject") as string;
     const description = formData.get("description") as string;
     const priority = formData.get("priority") as string;
@@ -31,6 +42,7 @@ export const createTicket = async (
         subject,
         description,
         priority,
+        userId: user.id,
       },
     });
 
@@ -57,7 +69,19 @@ export const createTicket = async (
 
 export const getTickets = async () => {
   try {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      logEvent("Unauthorized ticket fetch attempt", "ticket", {}, "warning");
+
+      return {
+        success: false,
+        message: "You must be logged in to fetch tickets",
+      };
+    }
+
     const tickets = await prisma.ticket.findMany({
+      where: { userId: user.id },
       orderBy: { createdAt: "desc" },
     });
     logEvent(
