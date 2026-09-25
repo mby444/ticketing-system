@@ -62,6 +62,7 @@ export const createTicket = async (
       "ticket",
       { formData: Object.fromEntries(formData.entries()) },
       "error",
+      error,
     );
     return { success: false, message: "Failed to create ticket" };
   }
@@ -74,10 +75,7 @@ export const getTickets = async () => {
     if (!user) {
       logEvent("Unauthorized ticket fetch attempt", "ticket", {}, "warning");
 
-      return {
-        success: false,
-        message: "You must be logged in to fetch tickets",
-      };
+      return [];
     }
 
     const tickets = await prisma.ticket.findMany({
@@ -92,13 +90,25 @@ export const getTickets = async () => {
     );
     return tickets;
   } catch (error) {
-    logEvent("Failed to get tickets", "ticket", {}, "error");
+    logEvent("Failed to get tickets", "ticket", {}, "error", error);
     return [];
   }
 };
 
 export const getTicketById = async (id: number) => {
   try {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      logEvent(
+        "Unauthorized ticket fetch attempt",
+        "ticket",
+        { ticketId: id },
+        "warning",
+      );
+      return null;
+    }
+
     const ticket = await prisma.ticket.findUnique({ where: { id } });
 
     if (!ticket) {
@@ -131,6 +141,16 @@ export const closeTicket = async (
   formData: FormData,
 ) => {
   try {
+    const user = await getCurrentUser();
+
+    if (!user) {
+      logEvent("Unauthorized close ticket attempt", "ticket", {}, "warning");
+      return {
+        success: false,
+        message: "You must be logged in to close a ticket",
+      };
+    }
+
     const ticketId = Number(formData.get("ticketId"));
 
     if (!ticketId) {
@@ -159,6 +179,7 @@ export const closeTicket = async (
       "ticket",
       { formData: Object.fromEntries(formData.entries()) },
       "error",
+      error,
     );
     return { success: false, message: "Failed to close ticket" };
   }

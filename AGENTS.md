@@ -42,7 +42,9 @@ Single Next.js 16 (App Router) app — a support ticket system ("QuickTicket"). 
 
 ## Known state — don't assume you caused these
 
-- **Baseline is not green**: `npm run lint` reports 3 errors (`prefer-const` in `app/page.tsx`, `no-explicit-any` in `lib/auth.ts` and `utils/sentry.ts`), and `tsc --noEmit` fails in `actions/ticket.actions.ts` (ticket `create` omits the required `user` relation / `userId`).
-- **Auth is half-wired**: `lib/auth.ts` exists, but `lib/current-user.ts`, `actions/auth.actions.ts`, and `/login` `/register` routes do **not** — they are referenced only in commented-out code in `Navbar`, `LogoutButton`, and the ticket pages. Navbar's Login/Register links 404. Un-commenting those imports will not compile.
+- **Baseline is green** (verified): `npm.cmd run lint` (0 problems), `npx.cmd tsc --noEmit`, and `npm.cmd run build` all pass. New failures are yours, not pre-existing.
+- **Auth is wired end-to-end**: `actions/auth.actions.ts` (register/login/logout), `lib/current-user.ts` (`getCurrentUser()`), routes under `app/(auth)/`. Ticket pages guard with `getCurrentUser()` + `redirect("/login")`; every ticket action requires a session. **Not done yet**: ownership checks — the list is scoped to your own tickets, but `/tickets/[id]` and `closeTicket` accept any logged-in user's ticket (part of the RBAC phase).
+- `getCurrentUser()` calls `unstable_rethrow(error)` before logging in its catch — Next.js control-flow errors (`cookies()` during prerender) must escape. Removing that line floods the build log with `Dynamic server usage` errors.
+- `prisma/schema.prisma` has an uncommitted `Role` enum + `User.role` field (RBAC in progress); no migration has been run for it yet, so the DB and generated client may lag the schema.
 - `app/sentry-example-page/` and `app/api/sentry-example-api/` are leftover Sentry scaffold, not real features.
 - `script.ts` is a scratch file for experimenting with the Prisma client.

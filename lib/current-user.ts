@@ -1,3 +1,4 @@
+import { unstable_rethrow } from "next/navigation";
 import { verifyAuthToken, getAuthCookie } from "./auth";
 import { prisma } from "./prisma";
 
@@ -25,6 +26,9 @@ export async function getCurrentUser() {
 
     return user;
   } catch (error) {
+    // Re-throw framework errors (e.g. cookies() during prerender) so Next.js
+    // can mark the route as dynamic instead of swallowing them here.
+    unstable_rethrow(error);
     console.log("Error getting the current user", error);
     return null;
   }
