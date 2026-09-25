@@ -1,10 +1,7 @@
 import Link from "next/link";
 import { FaTicketAlt } from "react-icons/fa";
-import { prisma } from "@/lib/prisma";
 
 const HomePage = async () => {
-  let users = await prisma.user.findMany();
-
   return (
     <main className="flex flex-col text-center items-center justify-center min-h-screen px-4">
       <FaTicketAlt className="mx-auto mb-4 text-red-600" size={60} />
@@ -28,15 +25,6 @@ const HomePage = async () => {
         >
           View Tickets
         </Link>
-      </div>
-
-      <div className="mt-12 text-left bg-gray-100 p-4 rounded max-w-lg w-full">
-        <h2 className="font-bold text-xl mb-2 text-gray-800">
-          Database Users:
-        </h2>
-        <pre className="text-sm text-gray-700 text-left overflow-x-auto">
-          {JSON.stringify(users, null, 2)}
-        </pre>
       </div>
     </main>
   );
