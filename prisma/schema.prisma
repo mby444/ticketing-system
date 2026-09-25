@@ -49,4 +49,20 @@ model Ticket {
   user        User         @relation("OwnedTickets", fields: [userId], references: [id])
   assigneeId  String?
   assignedTo  User?        @relation("AssignedTickets", fields: [assigneeId], references: [id])
+  attachments TicketAttachment[]
+}
+
+model TicketAttachment {
+  id           String   @id @default(cuid())
+  fileName     String
+  mimeType     String
+  size         Int
+  url          String
+  publicId     String
+  resourceType String
+  createdAt    DateTime @default(now())
+  ticketId     Int
+  ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
 }

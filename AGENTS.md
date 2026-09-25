@@ -16,7 +16,7 @@ Single Next.js 16 (App Router) app — a support ticket system ("QuickTicket"). 
 
 - `app/` — routes: `/`, `/tickets`, `/tickets/[id]`, `/tickets/new`. Server components call server actions directly.
 - `actions/ticket.actions.ts` — every server action (`"use server"`); mutations call `revalidatePath("/tickets")`.
-- `lib/prisma.ts` — Prisma singleton; `lib/auth.ts` — jose JWT + `auth-token` cookie helpers; `utils/sentry.ts` — `logEvent()` wrapper used throughout instead of raw Sentry calls.
+- `lib/prisma.ts` — Prisma singleton; `lib/auth.ts` — jose JWT + `auth-token` cookie helpers; `utils/sentry.ts` — `logEvent()` wrapper used throughout instead of raw Sentry calls; `lib/cloudinary.ts` — server-only attachment helpers (validate/upload/destroy/thumbnail). **Never import it from a client component** — it pulls in the Cloudinary SDK; client forms duplicate the small size/MIME/count constants instead.
 - Path alias `@/*` → repo root (see `tsconfig.json`).
 
 ## Commands
@@ -38,7 +38,7 @@ Single Next.js 16 (App Router) app — a support ticket system ("QuickTicket"). 
 
 ## Environment
 
-`.env` is gitignored but present locally; required vars: `DATABASE_URL`, `AUTH_SECRET`, `SENTRY_AUTH_TOKEN`. Sentry DSN is hardcoded in `sentry.*.config.ts`; `next.config.ts` wraps the build with `withSentryConfig` (tunnel route `/monitoring`), so builds attempt source-map upload.
+`.env` is gitignored but present locally; required vars: `DATABASE_URL`, `AUTH_SECRET`, `SENTRY_AUTH_TOKEN`, plus `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` for ticket attachments (already populated locally; uploads fail fast with a clear error when missing). Sentry DSN is hardcoded in `sentry.*.config.ts`; `next.config.ts` wraps the build with `withSentryConfig` (tunnel route `/monitoring`), so builds attempt source-map upload.
 
 ## Known state — don't assume you caused these
 
@@ -46,6 +46,7 @@ Single Next.js 16 (App Router) app — a support ticket system ("QuickTicket"). 
 - **Auth is wired end-to-end**: `actions/auth.actions.ts` (register/login/logout), `lib/current-user.ts` (`getCurrentUser()` — returns `id, email, name, role`), routes under `app/(auth)/`. Ticket pages guard with `requireUser()` from `lib/authorization.ts`; every ticket action requires a session, and ownership/role checks are enforced server-side: `getTicketById` returns `null` → 404 for a CLIENT's foreign ticket, `closeTicket` denies non-owners.
 - `getCurrentUser()` calls `unstable_rethrow(error)` before logging in its catch — Next.js control-flow errors (`cookies()` during prerender) must escape. Removing that line floods the build log with `Dynamic server usage` errors.
 - **RBAC is implemented and verified**: migration `20260925000000_add_rbac` (hand-written via `migrate diff` + `migrate deploy` because `migrate dev` is non-interactive here) added `Role`/`TicketStatus` enums, `User.role`, `Ticket.assigneeId` + `assignedTo`, and converted `status` text → enum with a `USING` mapping (`'In Progress'` → `'In_Progress'`) so no data was lost; it backfills `user1@example.com` → ADMIN, `user2`/`user3` → SUPPORT_AGENT (`prisma/seed.ts` matches: 1 ADMIN, 2 SUPPORT_AGENT, 17 CLIENT; seed tickets unassigned). App code: `lib/authorization.ts` (`requireUser`, `requireRole`, `isStaff`, `canAccessTicket`, `STAFF_ROLES`), staff-only actions in `actions/ticket.actions.ts` (`getAllTickets`, `listAgents`, `updateTicketStatus`, `assignTicket` — both staff roles may assign, invalid enum/assignee rejected server-side), dashboard at `/dashboard`, Navbar shows Dashboard link + role chip for staff. Verified 2026-09-25 by HTTP role matrix: 9 page/redirect cases + 11 action-level authz cases, all passing (test artifacts cleaned up).
+- **Multi-file attachments (Cloudinary signed server-side upload) are implemented and verified (2026-09-25)**: `TicketAttachment` model + migration `20260925120000_add_ticket_attachments` (FK `onDelete: Cascade`, `@@index([ticketId])`). `createTicket` and `addAttachments` in `actions/ticket.actions.ts` are **all-or-nothing**: validate all files (≤5 per ticket, ≤5MB each, jpg/png/webp/pdf) → upload all to Cloudinary → one interactive `prisma.$transaction` (ticket + rows); any failure destroys already-uploaded assets via best-effort `destroyAsset` and returns an error. UI: file input + summary in `app/tickets/new/ticket-form.tsx`, attachments section + `app/tickets/[id]/attach-form.tsx` on the detail page — both client forms pre-check MIME/size/count, use `useActionState` (`pending` → disabled + "Uploading…") and sonner toasts. `next.config.ts` sets `experimental.serverActions.bodySizeLimit: "30mb"` (**must be under `experimental`** — top-level `serverActions` fails config validation on Next 16) and `images.remotePatterns` for `res.cloudinary.com`. Gotchas: (a) `getThumbnailUrl()` must call the lazy `ensureConfigured()` itself — a detail page can render in a process that never uploaded anything, otherwise `cloudinary.url()` throws "Must supply cloud_name" → 500 (it also falls back to the original URL rather than breaking the page); (b) never pass `format: "auto"` to `cloudinary.url()` — the SDK emits a `.auto` extension that 404s upstream; the `/_next/image` proxy negotiates modern formats anyway; (c) PDFs upload as `resource_type: "raw"` (download link only), images as `"image"` (240×240 `c_fill` thumbnail via next/image). Verified 2026-09-25: 19/19 HTTP matrix cases (temp route harness dispatching the real actions — since deleted) + full browser click-through: 1.92MB file through the real form (proves bodySizeLimit > the 1MB default), pending indicators, client-side reject toast for `.txt`, success toast "1 attachment added", thumbnail actually rendering (`naturalWidth > 0`). All test tickets and Cloudinary assets cleaned up.
 - **After `npx.cmd prisma generate`, restart `next dev`**: Turbopack hot reload does NOT pick up the regenerated client in `generated/prisma`. A running server keeps the stale schema, so `getCurrentUser()`'s `select` on a new field throws `PrismaClientValidationError` which its catch swallows → every page 307s to `/login` despite a valid cookie.
 - `app/sentry-example-page/` and `app/api/sentry-example-api/` are leftover Sentry scaffold, not real features.
 - `script.ts` is a scratch file for experimenting with the Prisma client.
@@ -64,3 +65,14 @@ Do not treat these as bugs; they were scoped out when RBAC shipped:
 8. No automated tests (repo has no test framework; RBAC was verified with a one-off HTTP role matrix — 9 page cases + 11 action cases — that is not reproducible from the repo).
 9. No explicit 403 UX — non-staff opening `/dashboard` are silently redirected to `/tickets`.
 10. No notifications when a ticket is assigned.
+
+## Attachment backlog — intentionally not implemented (recorded 2026-09-25)
+
+Do not treat these as bugs; they were scoped out when attachments shipped:
+
+1. No delete/replace of an uploaded attachment (rows only disappear via `onDelete: Cascade` when the ticket is deleted).
+2. No PDF preview — raw `resource_type` files render as a download link only.
+3. `/tickets` and `/dashboard` lists don't show attachment counts.
+4. No virus/content scanning — the trust boundary is server-side MIME + size checks plus Cloudinary.
+5. `prisma/seed.ts` seeds no attachments.
+6. Staff cannot attach from `/dashboard` — only the new-ticket form and the ticket detail page.

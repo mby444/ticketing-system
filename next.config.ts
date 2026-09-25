@@ -2,7 +2,19 @@ import { withSentryConfig } from "@sentry/nextjs";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Server actions default to a 1MB body limit — attachments need up to
+  // 5 files x 5MB (+ multipart overhead), so raise it to 30MB.
+  experimental: {
+    serverActions: {
+      bodySizeLimit: "30mb",
+    },
+  },
+  images: {
+    // Allow next/image to load Cloudinary-hosted attachment thumbnails.
+    remotePatterns: [
+      { protocol: "https", hostname: "res.cloudinary.com", pathname: "/**" },
+    ],
+  },
 };
 
 export default withSentryConfig(nextConfig, {

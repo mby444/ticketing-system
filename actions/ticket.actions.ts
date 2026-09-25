@@ -3,6 +3,13 @@
 import { getCurrentUser } from "@/lib/current-user";
 import { canAccessTicket, isStaff, STAFF_ROLES } from "@/lib/authorization";
 import { TicketStatus } from "@/generated/prisma/client";
+import {
+  MAX_FILES,
+  validateAttachmentFile,
+  uploadAttachment,
+  destroyAsset,
+  type AttachmentUpload,
+} from "@/lib/cloudinary";
 import { prisma } from "@/lib/prisma";
 import { logEvent } from "@/utils/sentry";
 import * as Sentry from "@sentry/nextjs";
@@ -39,30 +46,116 @@ export const createTicket = async (
       return { success: false, message: "All fields are required" };
     }
 
-    const ticket = await prisma.ticket.create({
-      data: {
-        subject,
-        description,
-        priority,
-        userId: user.id,
-      },
-    });
+    // Collect attachment files (optional — zero files is fine).
+    const files = formData
+      .getAll("attachments")
+      .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+
+    if (files.length > MAX_FILES) {
+      logEvent(
+        "Ticket creation rejected: too many attachments",
+        "ticket",
+        { count: files.length, max: MAX_FILES },
+        "warning",
+      );
+      return {
+        success: false,
+        message: `Maximum ${MAX_FILES} attachments per ticket`,
+      };
+    }
+
+    for (const file of files) {
+      const validationError = validateAttachmentFile(file);
+      if (validationError) {
+        logEvent(
+          "Ticket creation rejected: invalid attachment",
+          "ticket",
+          { fileName: file.name, mimeType: file.type, size: file.size },
+          "warning",
+        );
+        return { success: false, message: validationError };
+      }
+    }
+
+    // All-or-nothing: upload everything BEFORE writing to the database, so a
+    // failed upload never leaves a ticket behind without (some of) its files.
+    const uploaded: AttachmentUpload[] = [];
+    for (const file of files) {
+      try {
+        uploaded.push(await uploadAttachment(file));
+      } catch (error) {
+        logEvent(
+          "Cloudinary upload failed during ticket creation",
+          "ticket",
+          { fileName: file.name, size: file.size },
+          "error",
+          error,
+        );
+        await Promise.all(
+          uploaded.map((asset) => destroyAsset(asset.publicId, asset.resourceType)),
+        );
+        return {
+          success: false,
+          message: `Failed to upload "${file.name}" — the ticket was not created`,
+        };
+      }
+    }
+
+    let ticket;
+    try {
+      ticket = await prisma.$transaction(async (tx) => {
+        const created = await tx.ticket.create({
+          data: { subject, description, priority, userId: user.id },
+        });
+        if (uploaded.length > 0) {
+          await tx.ticketAttachment.createMany({
+            data: uploaded.map((asset) => ({ ...asset, ticketId: created.id })),
+          });
+        }
+        return created;
+      });
+    } catch (error) {
+      logEvent(
+        "Failed to persist ticket with attachments",
+        "ticket",
+        { subject, attachments: uploaded.length },
+        "error",
+        error,
+      );
+      await Promise.all(
+        uploaded.map((asset) => destroyAsset(asset.publicId, asset.resourceType)),
+      );
+      return { success: false, message: "Failed to create ticket" };
+    }
 
     logEvent(
       `Ticket ${ticket.id} created successfully`,
       "ticket",
-      { ticketId: ticket.id },
+      {
+        ticketId: ticket.id,
+        attachments: uploaded.length,
+        totalBytes: uploaded.reduce((sum, asset) => sum + asset.size, 0),
+      },
       "info",
     );
 
     revalidatePath("/tickets");
 
-    return { success: true, message: "Ticket created successfully" };
+    return {
+      success: true,
+      message:
+        uploaded.length > 0
+          ? `Ticket created successfully with ${uploaded.length} attachment${uploaded.length === 1 ? "" : "s"}`
+          : "Ticket created successfully",
+    };
   } catch (error) {
     logEvent(
       "Failed to create ticket",
       "ticket",
-      { formData: Object.fromEntries(formData.entries()) },
+      {
+        subject: formData.get("subject"),
+        attachmentCount: formData.getAll("attachments").length,
+      },
       "error",
       error,
     );
@@ -111,7 +204,10 @@ export const getTicketById = async (id: number) => {
       return null;
     }
 
-    const ticket = await prisma.ticket.findUnique({ where: { id } });
+    const ticket = await prisma.ticket.findUnique({
+      where: { id },
+      include: { attachments: { orderBy: { createdAt: "asc" } } },
+    });
 
     if (!ticket) {
       logEvent(`Ticket ${id} not found`, "ticket", { ticketId: id }, "warning");
@@ -426,5 +522,167 @@ export const assignTicket = async (
       error,
     );
     return { success: false, message: "Failed to assign ticket" };
+  }
+};
+
+export const addAttachments = async (
+  prevState: ActionState,
+  formData: FormData,
+) => {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      logEvent("Unauthorized attachment attempt", "ticket", {}, "warning");
+      return {
+        success: false,
+        message: "You must be logged in to attach files",
+      };
+    }
+
+    const ticketId = Number(formData.get("ticketId"));
+    if (!ticketId) {
+      logEvent("Validation error: Missing ticket ID", "ticket", {}, "warning");
+      return { success: false, message: "Ticket ID is required" };
+    }
+
+    const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket) {
+      logEvent(
+        `Ticket ${ticketId} not found`,
+        "ticket",
+        { ticketId },
+        "warning",
+      );
+      return { success: false, message: "Ticket not found" };
+    }
+
+    if (!canAccessTicket(user, ticket)) {
+      logEvent(
+        "Unauthorized attachment attempt",
+        "ticket",
+        { ticketId, userId: user.id },
+        "warning",
+      );
+      return {
+        success: false,
+        message: "You are not allowed to modify this ticket",
+      };
+    }
+
+    const files = formData
+      .getAll("attachments")
+      .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+
+    if (files.length === 0) {
+      return { success: false, message: "Select at least one file to attach" };
+    }
+
+    if (files.length > MAX_FILES) {
+      logEvent(
+        "Attachment rejected: too many files",
+        "ticket",
+        { ticketId, count: files.length, max: MAX_FILES },
+        "warning",
+      );
+      return { success: false, message: `Maximum ${MAX_FILES} files per upload` };
+    }
+
+    const existingCount = await prisma.ticketAttachment.count({
+      where: { ticketId },
+    });
+    if (existingCount + files.length > MAX_FILES) {
+      return {
+        success: false,
+        message: `A ticket can have at most ${MAX_FILES} attachments (it already has ${existingCount})`,
+      };
+    }
+
+    for (const file of files) {
+      const validationError = validateAttachmentFile(file);
+      if (validationError) {
+        logEvent(
+          "Attachment rejected: invalid file",
+          "ticket",
+          { ticketId, fileName: file.name, mimeType: file.type, size: file.size },
+          "warning",
+        );
+        return { success: false, message: validationError };
+      }
+    }
+
+    // All-or-nothing (same pattern as createTicket): upload first, then
+    // persist metadata in one transaction; clean up assets on any failure.
+    const uploaded: AttachmentUpload[] = [];
+    for (const file of files) {
+      try {
+        uploaded.push(await uploadAttachment(file));
+      } catch (error) {
+        logEvent(
+          "Cloudinary upload failed while adding attachments",
+          "ticket",
+          { ticketId, fileName: file.name, size: file.size },
+          "error",
+          error,
+        );
+        await Promise.all(
+          uploaded.map((asset) => destroyAsset(asset.publicId, asset.resourceType)),
+        );
+        return {
+          success: false,
+          message: `Failed to upload "${file.name}" — no attachments were added`,
+        };
+      }
+    }
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.ticketAttachment.createMany({
+          data: uploaded.map((asset) => ({ ...asset, ticketId })),
+        });
+      });
+    } catch (error) {
+      logEvent(
+        "Failed to persist attachments",
+        "ticket",
+        { ticketId, count: uploaded.length },
+        "error",
+        error,
+      );
+      await Promise.all(
+        uploaded.map((asset) => destroyAsset(asset.publicId, asset.resourceType)),
+      );
+      return { success: false, message: "Failed to save attachments" };
+    }
+
+    logEvent(
+      `Attachment(s) added to ticket ${ticketId}`,
+      "ticket",
+      {
+        ticketId,
+        count: uploaded.length,
+        totalBytes: uploaded.reduce((sum, asset) => sum + asset.size, 0),
+      },
+      "info",
+    );
+
+    revalidatePath("/tickets");
+    revalidatePath("/tickets/[id]", "page");
+
+    return {
+      success: true,
+      message: `${uploaded.length} attachment${uploaded.length === 1 ? "" : "s"} added`,
+    };
+  } catch (error) {
+    logEvent(
+      "Failed to add attachments",
+      "ticket",
+      {
+        ticketId: formData.get("ticketId"),
+        attachmentCount: formData.getAll("attachments").length,
+      },
+      "error",
+      error,
+    );
+    return { success: false, message: "Failed to add attachments" };
   }
 };
