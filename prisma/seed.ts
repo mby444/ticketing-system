@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { Role, TicketStatus } from "@/generated/prisma/client";
 import bcrypt from "bcryptjs";
 
 const subjects = [
@@ -23,7 +24,16 @@ const descriptions = [
 ];
 
 const priorities = ["Low", "Medium", "High", "Critical"];
-const statuses = ["Open", "In Progress", "Resolved", "Closed"];
+const statuses: TicketStatus[] = [
+  "Open",
+  "In_Progress",
+  "Resolved",
+  "Closed",
+];
+
+// Peran berdasarkan index: user pertama ADMIN, dua berikutnya SUPPORT_AGENT, sisanya CLIENT
+const getRole = (index: number): Role =>
+  index === 0 ? "ADMIN" : index < 3 ? "SUPPORT_AGENT" : "CLIENT";
 
 // Fungsi helper untuk mengambil elemen acak dari array
 const getRandomItem = <T>(array: T[]): T =>
@@ -41,7 +51,7 @@ async function main() {
   console.log("Menyiapkan hash password...");
   const hashedPassword = await bcrypt.hash("password123", 10);
 
-  console.log("Memulai seeding 20 user beserta tiket...");
+  console.log("Memulai seeding 20 user (1 ADMIN, 2 SUPPORT_AGENT, 17 CLIENT) beserta tiket...");
 
   // Generate 20 User secara paralel
   const userPromises = Array.from({ length: 20 }).map((_, index) => {
@@ -60,6 +70,7 @@ async function main() {
       data: {
         email: `user${userNumber}@example.com`,
         name: `User Ke-${userNumber}`,
+        role: getRole(index),
         password: hashedPassword,
         tickets: {
           create: ticketsData,

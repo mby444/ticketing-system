@@ -24,6 +24,8 @@ const TicketDetailsPage = async (props: {
 
   logEvent("Viewing ticket details", "ticket", { ticketId: ticket.id }, "info");
 
+  const isClosed = ticket.status === "Closed";
+
   return (
     <div className="min-h-screen bg-blue-50 p-8">
       <div className="max-w-2xl mx-auto bg-white rounded-lg shadow border border-gray-200 p-8 space-y-6">
@@ -51,11 +53,8 @@ const TicketDetailsPage = async (props: {
           ← Back to Tickets
         </Link>
 
-        {ticket.status !== "Closed" && (
-          <CloseTicketButton
-            ticketId={ticket.id}
-            isClosed={ticket.status === "Closed"}
-          />
+        {!isClosed && (
+          <CloseTicketButton ticketId={ticket.id} isClosed={isClosed} />
         )}
       </div>
     </div>

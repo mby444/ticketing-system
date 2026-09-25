@@ -18,25 +18,35 @@ enum Role {
   SUPPORT_AGENT
 }
 
+enum TicketStatus {
+  Open
+  In_Progress
+  Resolved
+  Closed
+}
+
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  role      Role     @default(CLIENT)
-  password  String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  tickets   Ticket[]
+  id              String   @id @default(cuid())
+  email           String   @unique
+  name            String?
+  role            Role     @default(CLIENT)
+  password        String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  tickets         Ticket[] @relation("OwnedTickets")
+  assignedTickets Ticket[] @relation("AssignedTickets")
 }
 
 model Ticket {
-  id          Int      @id @default(autoincrement())
+  id          Int          @id @default(autoincrement())
   subject     String
   description String
   priority    String
-  status      String   @default("Open")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  status      TicketStatus @default(Open)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
   userId      String
-  user        User     @relation(fields: [userId], references: [id])
+  user        User         @relation("OwnedTickets", fields: [userId], references: [id])
+  assigneeId  String?
+  assignedTo  User?        @relation("AssignedTickets", fields: [assigneeId], references: [id])
 }
