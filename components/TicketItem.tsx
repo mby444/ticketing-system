@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { getPriorityClass } from "@/utils/ui";
+import { getPriorityClass, getStatusClass } from "@/utils/ui";
 import type { Ticket } from "@/generated/prisma/client";
+import { formatStatus } from "@/utils/string-format";
 
 type TicketItemProps = {
   ticket: Ticket;
@@ -28,6 +29,12 @@ const TicketItem = ({ ticket }: TicketItemProps) => {
           Priority:{" "}
           <span className={getPriorityClass(ticket.priority)}>
             {ticket.priority}
+          </span>
+        </div>
+        <div className="text-sm text-gray-500">
+          Status:{" "}
+          <span className={getStatusClass(ticket.status)}>
+            {formatStatus(ticket.status)}
           </span>
         </div>
         <Link

@@ -2,9 +2,10 @@ import { getTicketById } from "@/actions/ticket.actions";
 import { logEvent } from "@/utils/sentry";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getPriorityClass } from "@/utils/ui";
+import { getPriorityClass, getStatusClass } from "@/utils/ui";
 import CloseTicketButton from "@/components/CloseTicketButton";
 import { requireUser } from "@/lib/authorization";
+import { formatStatus } from "@/utils/string-format";
 
 const TicketDetailsPage = async (props: {
   params: Promise<{ id: string }>;
@@ -35,6 +36,13 @@ const TicketDetailsPage = async (props: {
         <div className="text-gray-700">
           <h2 className="text-lg font-semibold mb-2">Priority</h2>
           <p className={getPriorityClass(ticket.priority)}>{ticket.priority}</p>
+        </div>
+
+        <div className="text-gray-700">
+          <h2 className="text-lg font-semibold mb-2">Status</h2>
+          <p className={getStatusClass(ticket.status)}>
+            {formatStatus(ticket.status)}
+          </p>
         </div>
 
         <div className="text-gray-700">
