@@ -1,13 +1,8 @@
-import { redirect } from "next/navigation";
 import NewTicketForm from "./ticket-form";
-import { getCurrentUser } from "@/lib/current-user";
+import { requireUser } from "@/lib/authorization";
 
 const NewTicketPage = async () => {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect("/login");
-  }
+  await requireUser();
 
   return (
     <div className="min-h-screen bg-blue-50 flex items-center justify-center px-4">

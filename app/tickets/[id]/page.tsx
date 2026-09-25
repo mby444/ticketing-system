@@ -1,19 +1,15 @@
 import { getTicketById } from "@/actions/ticket.actions";
 import { logEvent } from "@/utils/sentry";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { getPriorityClass } from "@/utils/ui";
 import CloseTicketButton from "@/components/CloseTicketButton";
-import { getCurrentUser } from "@/lib/current-user";
+import { requireUser } from "@/lib/authorization";
 
 const TicketDetailsPage = async (props: {
   params: Promise<{ id: string }>;
 }) => {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect("/login");
-  }
+  await requireUser();
 
   const { id } = await props.params;
   const ticket = await getTicketById(Number(id));

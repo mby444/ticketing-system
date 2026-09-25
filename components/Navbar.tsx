@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
+import { isStaff } from "@/lib/authorization";
 import LogoutButton from "./LogoutButton";
 
 const Navbar = async () => {
@@ -15,6 +16,14 @@ const Navbar = async () => {
       <div className="flex items-center space-x-4">
         {user ? (
           <>
+            {isStaff(user) && (
+              <Link
+                href="/dashboard"
+                className="hover:underline text-gray-700 transition font-medium"
+              >
+                Dashboard
+              </Link>
+            )}
             <Link
               href="/tickets/new"
               className="hover:underline text-gray-700 transition"
@@ -27,6 +36,9 @@ const Navbar = async () => {
             >
               My Tickets
             </Link>
+            <span className="text-xs uppercase tracking-wide text-gray-500 border border-gray-200 rounded px-2 py-1">
+              {user.role.replace("_", " ")}
+            </span>
             <LogoutButton />
           </>
         ) : (
