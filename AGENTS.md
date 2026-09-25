@@ -49,3 +49,18 @@ Single Next.js 16 (App Router) app — a support ticket system ("QuickTicket"). 
 - **After `npx.cmd prisma generate`, restart `next dev`**: Turbopack hot reload does NOT pick up the regenerated client in `generated/prisma`. A running server keeps the stale schema, so `getCurrentUser()`'s `select` on a new field throws `PrismaClientValidationError` which its catch swallows → every page 307s to `/login` despite a valid cookie.
 - `app/sentry-example-page/` and `app/api/sentry-example-api/` are leftover Sentry scaffold, not real features.
 - `script.ts` is a scratch file for experimenting with the Prisma client.
+
+## RBAC backlog — intentionally not implemented (recorded 2026-09-25)
+
+Do not treat these as bugs; they were scoped out when RBAC shipped:
+
+1. Assignee not shown on ticket detail/list pages — only on `/dashboard`.
+2. No in-app role management (promote to SUPPORT_AGENT/ADMIN) — seed or SQL only; open decision: who may promote (suggest ADMIN-only).
+3. Dashboard has no filter/search/pagination/sort (e.g., "unassigned" triage filter) and no bulk actions.
+4. No status/assignment audit trail in the DB — changes only reach Sentry via `logEvent`.
+5. No status transition rules — staff may set any status, including reopening Closed.
+6. `priority` is still `String` (deliberate small-diff choice): no `TicketPriority` enum; the new-ticket form offers Low/Medium/High but the seed can create `Critical` (unstyled by `getPriorityClass`); priority not editable from the dashboard.
+7. No DB indexes on the `Ticket.userId` / `Ticket.assigneeId` foreign keys (Prisma does not add them automatically).
+8. No automated tests (repo has no test framework; RBAC was verified with a one-off HTTP role matrix — 9 page cases + 11 action cases — that is not reproducible from the repo).
+9. No explicit 403 UX — non-staff opening `/dashboard` are silently redirected to `/tickets`.
+10. No notifications when a ticket is assigned.
