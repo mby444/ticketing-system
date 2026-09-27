@@ -11,6 +11,7 @@ import {
   type AttachmentUpload,
 } from "@/lib/cloudinary";
 import { prisma } from "@/lib/prisma";
+import { publishJob } from "@/lib/qstash";
 import { logEvent } from "@/utils/sentry";
 import * as Sentry from "@sentry/nextjs";
 import { revalidatePath } from "next/cache";
@@ -140,6 +141,10 @@ export const createTicket = async (
     );
 
     revalidatePath("/tickets");
+
+    // Best-effort: enqueue only — the email itself is sent asynchronously by
+    // /api/jobs/send-email (never blocks or fails this action).
+    await publishJob({ type: "TICKET_CREATED", ticketId: ticket.id });
 
     return {
       success: true,
@@ -426,6 +431,9 @@ export const updateTicketStatus = async (
 
     revalidatePath("/dashboard");
     revalidatePath("/tickets");
+
+    // Best-effort: enqueue only — the status email goes out asynchronously.
+    await publishJob({ type: "STATUS_UPDATED", ticketId, newStatus: status });
 
     return { success: true, message: "Ticket status updated" };
   } catch (error) {
