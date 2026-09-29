@@ -211,7 +211,19 @@ export const getTicketById = async (id: number) => {
 
     const ticket = await prisma.ticket.findUnique({
       where: { id },
-      include: { attachments: { orderBy: { createdAt: "asc" } } },
+      include: {
+        attachments: { orderBy: { createdAt: "asc" } },
+        // `id` breaks ties so two comments written in the same millisecond
+        // keep a stable order across re-renders.
+        comments: {
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          include: {
+            user: {
+              select: { id: true, name: true, email: true, role: true },
+            },
+          },
+        },
+      },
     });
 
     if (!ticket) {
@@ -692,5 +704,159 @@ export const addAttachments = async (
       error,
     );
     return { success: false, message: "Failed to add attachments" };
+  }
+};
+
+/**
+ * Maximum comment length. Kept in sync with the `maxLength` attribute of the
+ * comment textarea — the check in the action below is the authoritative one.
+ */
+const MAX_COMMENT_LENGTH = 5000;
+
+/**
+ * Posts a comment on a ticket and triggers the async notification email.
+ *
+ * Authorization (all server-side, never trust the client):
+ * - staff may comment on any ticket, a CLIENT only on their own (`canAccessTicket`)
+ * - no comments on a Closed ticket, for anybody
+ *
+ * Smart workflow: a staff reply to an Open ticket also moves it to In_Progress,
+ * atomically with the insert, since a reply means work has actually started.
+ */
+export const addTicketComment = async (
+  prevState: ActionState,
+  formData: FormData,
+) => {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      logEvent("Unauthorized comment attempt", "ticket", {}, "warning");
+      return { success: false, message: "You must be logged in to comment" };
+    }
+
+    const ticketId = Number(formData.get("ticketId"));
+    if (!ticketId) {
+      logEvent("Validation error: Missing ticket ID", "ticket", {}, "warning");
+      return { success: false, message: "Ticket ID is required" };
+    }
+
+    const body = String(formData.get("body") ?? "").trim();
+    if (!body) {
+      return { success: false, message: "Comment cannot be empty" };
+    }
+    if (body.length > MAX_COMMENT_LENGTH) {
+      logEvent(
+        "Comment rejected: body too long",
+        "ticket",
+        { ticketId, length: body.length },
+        "warning",
+      );
+      return {
+        success: false,
+        message: `Comments are limited to ${MAX_COMMENT_LENGTH} characters`,
+      };
+    }
+
+    const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
+    if (!ticket) {
+      logEvent(`Ticket ${ticketId} not found`, "ticket", { ticketId }, "warning");
+      return { success: false, message: "Ticket not found" };
+    }
+
+    if (!canAccessTicket(user, ticket)) {
+      logEvent(
+        "Unauthorized comment attempt",
+        "ticket",
+        { ticketId, userId: user.id },
+        "warning",
+      );
+      return {
+        success: false,
+        message: "You are not allowed to comment on this ticket",
+      };
+    }
+
+    if (ticket.status === "Closed") {
+      logEvent(
+        "Comment rejected: ticket is closed",
+        "ticket",
+        { ticketId, userId: user.id },
+        "warning",
+      );
+      return {
+        success: false,
+        message: "This ticket is closed — no new comments can be added",
+      };
+    }
+
+    // Only a staff reply bumps the status: a client must not be able to move
+    // their own ticket into In_Progress.
+    const bumpToInProgress = isStaff(user) && ticket.status === "Open";
+
+    let comment;
+    try {
+      comment = await prisma.$transaction(async (tx) => {
+        const created = await tx.ticketComment.create({
+          data: { body, ticketId, userId: user.id },
+        });
+        if (bumpToInProgress) {
+          await tx.ticket.update({
+            where: { id: ticketId },
+            data: { status: "In_Progress" },
+          });
+        }
+        return created;
+      });
+    } catch (error) {
+      logEvent(
+        "Failed to persist ticket comment",
+        "ticket",
+        { ticketId, statusBumped: bumpToInProgress },
+        "error",
+        error,
+      );
+      return { success: false, message: "Failed to post your comment" };
+    }
+
+    // Only metadata is logged — the comment body is user content and must not
+    // end up in Sentry.
+    logEvent(
+      `Comment ${comment.id} added to ticket ${ticketId}`,
+      "ticket",
+      {
+        ticketId,
+        commentId: comment.id,
+        authorId: user.id,
+        authorRole: user.role,
+        statusBumped: bumpToInProgress,
+        bodyLength: body.length,
+      },
+      "info",
+    );
+
+    revalidatePath("/tickets");
+    revalidatePath("/dashboard");
+    revalidatePath("/tickets/[id]", "page");
+
+    // Best-effort: enqueue only — the comment email goes out asynchronously.
+    await publishJob({ type: "NEW_COMMENT", ticketId, commentId: comment.id });
+    if (bumpToInProgress) {
+      await publishJob({
+        type: "STATUS_UPDATED",
+        ticketId,
+        newStatus: "In_Progress",
+      });
+    }
+
+    return { success: true, message: "Comment posted" };
+  } catch (error) {
+    logEvent(
+      "Failed to add ticket comment",
+      "ticket",
+      { ticketId: formData.get("ticketId") },
+      "error",
+      error,
+    );
+    return { success: false, message: "Failed to post your comment" };
   }
 };

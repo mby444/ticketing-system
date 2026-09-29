@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { Resend } from "resend";
 import { prisma } from "@/lib/prisma";
+import { isStaff } from "@/lib/roles";
 import { logEvent } from "@/utils/sentry";
 import type { EmailJob } from "@/lib/qstash";
 import { TicketCreatedEmail } from "@/emails/ticket-created";
@@ -31,13 +32,19 @@ const formatStatus = (status: string) => status.replace(/_/g, " ");
  * - throws       → transient failure; the route answers 500 so QStash
  *                  retries the delivery with exponential backoff
  *
- * The recipient is always the ticket owner, re-read from the database at
- * send time so the address can never be stale data from the queue payload.
+ * The recipient is resolved from the database at send time so the address can
+ * never be stale data from the queue payload. TICKET_CREATED and STATUS_UPDATED
+ * always go to the ticket owner; NEW_COMMENT is two-way (a staff reply notifies
+ * the owner, a customer reply notifies the assignee) and may legitimately have
+ * no recipient at all.
  */
 export async function sendJobEmail(job: EmailJob): Promise<void> {
   const ticket = await prisma.ticket.findUnique({
     where: { id: job.ticketId },
-    include: { user: { select: { email: true } } },
+    include: {
+      user: { select: { id: true, email: true } },
+      assignedTo: { select: { id: true, email: true } },
+    },
   });
 
   if (!ticket) {
@@ -52,9 +59,8 @@ export async function sendJobEmail(job: EmailJob): Promise<void> {
   }
 
   const ticketUrl = `${process.env.APP_URL}/tickets/${ticket.id}`;
-  const to = ticket.user.email;
 
-  let email: { subject: string; react: ReactElement };
+  let email: { subject: string; react: ReactElement; to?: string };
 
   switch (job.type) {
     case "TICKET_CREATED":
@@ -79,21 +85,79 @@ export async function sendJobEmail(job: EmailJob): Promise<void> {
         }),
       };
       break;
-    case "NEW_COMMENT":
+    case "NEW_COMMENT": {
+      const comment = await prisma.ticketComment.findUnique({
+        where: { id: job.commentId },
+        include: {
+          user: { select: { id: true, name: true, email: true, role: true } },
+        },
+      });
+
+      if (!comment) {
+        // Permanent: the comment went away with its ticket. Acknowledge.
+        logEvent(
+          "Email job skipped: comment no longer exists",
+          "email",
+          { job },
+          "warning",
+        );
+        return;
+      }
+
+      const authorIsStaff = isStaff(comment.user);
+
+      // A staff reply notifies the customer; a customer reply notifies the
+      // assignee. With no assignee there is nobody to notify — deliberately a
+      // no-op rather than broadcasting every ticket to every agent.
+      const recipient = authorIsStaff
+        ? ticket.user.email
+        : ticket.assignedTo?.email;
+
+      if (!recipient) {
+        logEvent(
+          "Email job skipped: customer reply on an unassigned ticket",
+          "email",
+          { ticketId: ticket.id, commentId: comment.id },
+          "warning",
+        );
+        return;
+      }
+
+      if (recipient === comment.user.email) {
+        // E.g. an admin replying on a ticket they own themselves.
+        logEvent(
+          "Email job skipped: author is the only party to notify",
+          "email",
+          { ticketId: ticket.id, commentId: comment.id },
+          "debug",
+        );
+        return;
+      }
+
       email = {
-        subject: `New reply on ticket #${ticket.id}`,
+        to: recipient,
+        subject: authorIsStaff
+          ? `New reply on ticket #${ticket.id}: ${ticket.subject}`
+          : `New customer reply on ticket #${ticket.id}: ${ticket.subject}`,
         react: NewCommentEmail({
           ticketId: ticket.id,
           subject: ticket.subject,
+          authorName: comment.user.name ?? comment.user.email,
+          isStaffAuthor: authorIsStaff,
+          body: comment.body,
           ticketUrl,
         }),
       };
       break;
+    }
   }
+
+  // TICKET_CREATED / STATUS_UPDATED leave `to` unset and fall back to the owner.
+  const recipient = email.to ?? ticket.user.email;
 
   const { error } = await resend.emails.send({
     from: senderAddress(),
-    to,
+    to: recipient,
     subject: email.subject,
     react: email.react,
   });
@@ -106,6 +170,6 @@ export async function sendJobEmail(job: EmailJob): Promise<void> {
   logEvent("Email sent", "email", {
     type: job.type,
     ticketId: ticket.id,
-    to,
+    to: recipient,
   });
 }

@@ -1,16 +1,14 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "./current-user";
 import type { Role } from "@/generated/prisma/client";
+import { isStaff, STAFF_ROLES } from "./roles";
 
 /** The authenticated user, including their role. */
 export type SessionUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
 
-/** Roles that may access the staff dashboard and manage all tickets. */
-export const STAFF_ROLES: Role[] = ["SUPPORT_AGENT", "ADMIN"];
-
-/** Staff (SUPPORT_AGENT, ADMIN) manage all tickets; CLIENT only their own. */
-export const isStaff = (user: { role: Role }): boolean =>
-  STAFF_ROLES.includes(user.role);
+// Re-exported so existing `from "@/lib/authorization"` imports keep working;
+// the implementations live in ./roles to stay dependency-free.
+export { isStaff, STAFF_ROLES };
 
 /**
  * Server-side ticket access check. Staff may access any ticket,

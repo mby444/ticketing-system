@@ -35,6 +35,7 @@ model User {
   updatedAt       DateTime @updatedAt
   tickets         Ticket[] @relation("OwnedTickets")
   assignedTickets Ticket[] @relation("AssignedTickets")
+  comments        TicketComment[]
 }
 
 model Ticket {
@@ -50,6 +51,7 @@ model Ticket {
   assigneeId  String?
   assignedTo  User?        @relation("AssignedTickets", fields: [assigneeId], references: [id])
   attachments TicketAttachment[]
+  comments    TicketComment[]
 }
 
 model TicketAttachment {
@@ -65,4 +67,17 @@ model TicketAttachment {
   ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@index([ticketId])
+}
+
+model TicketComment {
+  id        Int      @id @default(autoincrement())
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ticketId  Int
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
 }

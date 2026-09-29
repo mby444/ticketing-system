@@ -10,11 +10,13 @@ import { formatStatus } from "@/utils/string-format";
 import { getThumbnailUrl } from "@/lib/cloudinary";
 import { FaFilePdf } from "react-icons/fa";
 import AttachForm from "./attach-form";
+import CommentThread from "./comment-thread";
+import CommentForm from "./comment-form";
 
 const TicketDetailsPage = async (props: {
   params: Promise<{ id: string }>;
 }) => {
-  await requireUser();
+  const viewer = await requireUser();
 
   const { id } = await props.params;
   const ticket = await getTicketById(Number(id));
@@ -92,6 +94,21 @@ const TicketDetailsPage = async (props: {
             </div>
           </div>
         )}
+
+        <div className="text-gray-700">
+          <h2 className="text-lg font-semibold mb-2">
+            Conversation
+            {ticket.comments.length > 0 ? ` (${ticket.comments.length})` : ""}
+          </h2>
+          <div className="space-y-4">
+            <CommentThread
+              comments={ticket.comments}
+              viewerId={viewer.id}
+              isClosed={isClosed}
+            />
+            <CommentForm ticketId={ticket.id} isClosed={isClosed} />
+          </div>
+        </div>
 
         <div className="text-gray-700">
           <h2 className="text-lg font-semibold mb-2">Created At</h2>
