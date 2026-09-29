@@ -110,7 +110,12 @@ export const createTicket = async (
         });
         if (uploaded.length > 0) {
           await tx.ticketAttachment.createMany({
-            data: uploaded.map((asset) => ({ ...asset, ticketId: created.id })),
+            data: uploaded.map((asset) => ({
+              ...asset,
+              ticketId: created.id,
+              // The creator is the ticket owner, so this is the same person.
+              uploadedById: user.id,
+            })),
           });
         }
         return created;
@@ -212,7 +217,14 @@ export const getTicketById = async (id: number) => {
     const ticket = await prisma.ticket.findUnique({
       where: { id },
       include: {
-        attachments: { orderBy: { createdAt: "asc" } },
+        attachments: {
+          orderBy: { createdAt: "asc" },
+          include: {
+            uploadedBy: {
+              select: { id: true, name: true, email: true, role: true },
+            },
+          },
+        },
         // `id` breaks ties so two comments written in the same millisecond
         // keep a stable order across re-renders.
         comments: {
@@ -657,7 +669,14 @@ export const addAttachments = async (
     try {
       await prisma.$transaction(async (tx) => {
         await tx.ticketAttachment.createMany({
-          data: uploaded.map((asset) => ({ ...asset, ticketId })),
+          data: uploaded.map((asset) => ({
+            ...asset,
+            ticketId,
+            // Recorded from the session, never from form data. Staff may upload
+            // onto somebody else's ticket, so the uploader is tracked explicitly
+            // and surfaced in the UI.
+            uploadedById: user.id,
+          })),
         });
       });
     } catch (error) {
@@ -674,12 +693,27 @@ export const addAttachments = async (
       return { success: false, message: "Failed to save attachments" };
     }
 
+    // Staff uploading onto a ticket they do not own is an allowed, visible
+    // behaviour — give it its own greppable breadcrumb so it can be audited
+    // without inferring it from the userId/ticketId pair.
+    if (isStaff(user) && user.id !== ticket.userId) {
+      logEvent(
+        "Staff uploaded an attachment to a ticket they do not own",
+        "ticket",
+        { ticketId, userId: user.id, count: uploaded.length },
+        "info",
+      );
+    }
+
     logEvent(
       `Attachment(s) added to ticket ${ticketId}`,
       "ticket",
       {
         ticketId,
         count: uploaded.length,
+        uploadedById: user.id,
+        uploadedByRole: user.role,
+        uploadedByIsOwner: user.id === ticket.userId,
         totalBytes: uploaded.reduce((sum, asset) => sum + asset.size, 0),
       },
       "info",

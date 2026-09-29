@@ -36,6 +36,7 @@ model User {
   tickets         Ticket[] @relation("OwnedTickets")
   assignedTickets Ticket[] @relation("AssignedTickets")
   comments        TicketComment[]
+  attachmentsUploaded TicketAttachment[] @relation("UploadedAttachments")
 }
 
 model Ticket {
@@ -65,6 +66,12 @@ model TicketAttachment {
   createdAt    DateTime @default(now())
   ticketId     Int
   ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  // Deliberately has NO onDelete: the uploader trace is audit data, so
+  // deleting a user must be blocked (default NO ACTION) rather than silently
+  // erasing files they uploaded onto somebody else's ticket. This matches
+  // Ticket.userId. Deleting the ticket still cascades the attachment away.
+  uploadedById String
+  uploadedBy   User     @relation("UploadedAttachments", fields: [uploadedById], references: [id])
 
   @@index([ticketId])
 }

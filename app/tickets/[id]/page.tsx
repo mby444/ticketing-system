@@ -1,14 +1,12 @@
 import { getTicketById } from "@/actions/ticket.actions";
 import { logEvent } from "@/utils/sentry";
 import Link from "next/link";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { getPriorityClass, getStatusClass } from "@/utils/ui";
 import CloseTicketButton from "@/components/CloseTicketButton";
+import AttachmentList from "@/components/AttachmentList";
 import { requireUser } from "@/lib/authorization";
 import { formatStatus } from "@/utils/string-format";
-import { getThumbnailUrl } from "@/lib/cloudinary";
-import { FaFilePdf } from "react-icons/fa";
 import AttachForm from "./attach-form";
 import CommentThread from "./comment-thread";
 import CommentForm from "./comment-form";
@@ -51,49 +49,10 @@ const TicketDetailsPage = async (props: {
           </p>
         </div>
 
-        {ticket.attachments.length > 0 && (
-          <div className="text-gray-700">
-            <h2 className="text-lg font-semibold mb-2">Attachments</h2>
-            <div className="flex flex-wrap gap-3">
-              {ticket.attachments.map((attachment) =>
-                attachment.mimeType.startsWith("image/") ? (
-                  <a
-                    key={attachment.id}
-                    href={attachment.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={attachment.fileName}
-                    className="relative block w-24 h-24 rounded overflow-hidden border border-gray-200 hover:opacity-80 transition"
-                  >
-                    <Image
-                      src={getThumbnailUrl(attachment)}
-                      alt={attachment.fileName}
-                      fill
-                      sizes="96px"
-                      className="object-cover"
-                    />
-                  </a>
-                ) : (
-                  <a
-                    key={attachment.id}
-                    href={attachment.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded text-sm text-blue-600 hover:bg-blue-50 transition"
-                  >
-                    <FaFilePdf className="text-red-500 shrink-0" />
-                    <span className="max-w-[10rem] truncate">
-                      {attachment.fileName}
-                    </span>
-                    <span className="text-gray-400 text-xs whitespace-nowrap">
-                      ({Math.max(1, Math.round(attachment.size / 1024))} KB)
-                    </span>
-                  </a>
-                ),
-              )}
-            </div>
-          </div>
-        )}
+        <AttachmentList
+          attachments={ticket.attachments}
+          ticketOwnerId={ticket.userId}
+        />
 
         <div className="text-gray-700">
           <h2 className="text-lg font-semibold mb-2">
@@ -104,6 +63,7 @@ const TicketDetailsPage = async (props: {
             <CommentThread
               comments={ticket.comments}
               viewerId={viewer.id}
+              ticketOwnerId={ticket.userId}
               isClosed={isClosed}
             />
             <CommentForm ticketId={ticket.id} isClosed={isClosed} />

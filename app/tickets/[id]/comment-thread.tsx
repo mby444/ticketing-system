@@ -1,4 +1,3 @@
-import { isStaff } from "@/lib/authorization";
 import type { Role } from "@/generated/prisma/client";
 
 /** Mirrors the `comments` include in getTicketById. */
@@ -22,9 +21,11 @@ type TicketCommentView = {
 const CommentThread = ({
   comments,
   viewerId,
+  ticketOwnerId,
   isClosed,
 }: {
   comments: TicketCommentView[];
+  ticketOwnerId: string;
   viewerId: string;
   isClosed: boolean;
 }) => {
@@ -41,7 +42,7 @@ const CommentThread = ({
   return (
     <ol className="space-y-3">
       {comments.map((comment) => {
-        const staff = isStaff(comment.user);
+        const staff = comment.user.id !== ticketOwnerId;
         const mine = comment.user.id === viewerId;
 
         return (
