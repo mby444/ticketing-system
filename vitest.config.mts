@@ -9,9 +9,18 @@ const repoRoot = path.resolve(fileURLToPath(new URL(".", import.meta.url)));
 
 export default defineConfig({
   resolve: {
-    alias: {
-      "@": repoRoot,
-    },
+    alias: [
+      { find: "@", replacement: repoRoot },
+      // Swap the heavy Cloudinary SDK for a stub. lib/cloudinary.ts keeps its
+      // own logic (validateAttachmentFile and friends) — only the SDK behind
+      // it is replaced, which took the suite from ~35s back to ~2s.
+      {
+        find: /^cloudinary$/,
+        replacement: path.resolve(
+          fileURLToPath(new URL("./test-utils/stubs/cloudinary.ts", import.meta.url)),
+        ),
+      },
+    ],
   },
   test: {
     environment: "node",
