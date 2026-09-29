@@ -217,6 +217,15 @@ export const getTicketById = async (id: number) => {
     const ticket = await prisma.ticket.findUnique({
       where: { id },
       include: {
+        // Requester (ticket owner) and assignee. `assignedTo` is null until
+        // somebody claims the ticket — the detail page renders that state
+        // explicitly, and it is currently the common case.
+        user: {
+          select: { id: true, name: true, email: true, role: true },
+        },
+        assignedTo: {
+          select: { id: true, name: true, email: true, role: true },
+        },
         attachments: {
           orderBy: { createdAt: "asc" },
           include: {
@@ -540,6 +549,10 @@ export const assignTicket = async (
 
     revalidatePath("/dashboard");
     revalidatePath("/tickets");
+    // The ticket detail page embeds an AssignSelect, so it has to re-render
+    // too — otherwise the save succeeds but the page keeps showing the old
+    // assignee until a manual refresh.
+    revalidatePath("/tickets/[id]", "page");
 
     return {
       success: true,

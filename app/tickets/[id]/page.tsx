@@ -1,11 +1,13 @@
-import { getTicketById } from "@/actions/ticket.actions";
+import { getTicketById, listAgents } from "@/actions/ticket.actions";
 import { logEvent } from "@/utils/sentry";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPriorityClass, getStatusClass } from "@/utils/ui";
 import CloseTicketButton from "@/components/CloseTicketButton";
 import AttachmentList from "@/components/AttachmentList";
+import AssignSelect from "@/components/AssignSelect";
 import { requireUser } from "@/lib/authorization";
+import { isStaff } from "@/lib/roles";
 import { formatStatus } from "@/utils/string-format";
 import AttachForm from "./attach-form";
 import CommentThread from "./comment-thread";
@@ -27,6 +29,13 @@ const TicketDetailsPage = async (props: {
 
   const isClosed = ticket.status === "Closed";
 
+  // Staff get an editable assignee plus the requester's identity; a CLIENT can
+  // only ever open their own ticket (canAccessTicket), so the requester field
+  // would be redundant for them. listAgents is staff-gated server-side too —
+  // we just avoid paying for the call when it cannot succeed.
+  const staffView = isStaff(viewer);
+  const agents = staffView ? await listAgents() : [];
+
   return (
     <div className="min-h-screen bg-blue-50 p-8">
       <div className="max-w-2xl mx-auto bg-white rounded-lg shadow border border-gray-200 p-8 space-y-6">
@@ -47,6 +56,34 @@ const TicketDetailsPage = async (props: {
           <p className={getStatusClass(ticket.status)}>
             {formatStatus(ticket.status)}
           </p>
+        </div>
+
+        {staffView && (
+          <div className="text-gray-700">
+            <h2 className="text-lg font-semibold mb-2">Requester</h2>
+            <p>{ticket.user.name ?? ticket.user.email}</p>
+            <p className="text-xs text-gray-500">{ticket.user.email}</p>
+          </div>
+        )}
+
+        <div className="text-gray-700">
+          <h2 className="text-lg font-semibold mb-2">Assignee</h2>
+          {staffView ? (
+            <AssignSelect
+              ticketId={ticket.id}
+              assigneeId={ticket.assigneeId}
+              agents={agents}
+            />
+          ) : ticket.assignedTo ? (
+            <>
+              <p>{ticket.assignedTo.name ?? ticket.assignedTo.email}</p>
+              <p className="text-xs text-gray-500">
+                {ticket.assignedTo.email}
+              </p>
+            </>
+          ) : (
+            <p className="text-gray-500">Not assigned</p>
+          )}
         </div>
 
         <AttachmentList

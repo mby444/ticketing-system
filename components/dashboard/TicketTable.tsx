@@ -1,6 +1,6 @@
 import Link from "next/link";
 import StatusSelect from "@/components/dashboard/StatusSelect";
-import AssignSelect from "@/components/dashboard/AssignSelect";
+import AssignSelect from "@/components/AssignSelect";
 import type { getAllTickets, listAgents } from "@/actions/ticket.actions";
 
 type Tickets = Awaited<ReturnType<typeof getAllTickets>>;
