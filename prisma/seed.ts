@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import type { Role, TicketStatus } from "@/generated/prisma/client";
+import type { Role, TicketPriority, TicketStatus } from "@/generated/prisma/client";
 import bcrypt from "bcryptjs";
 
 const subjects = [
@@ -23,7 +23,10 @@ const descriptions = [
   "Dibutuhkan investigasi lebih lanjut mengenai akar masalah kendala ini.",
 ];
 
-const priorities = ["Low", "Medium", "High", "Critical"];
+// Typed as the enum so the seed cannot drift out of it: before TicketPriority
+// existed this was a bare string[] and would happily have written a value the
+// UI has no style for.
+const priorities: TicketPriority[] = ["Low", "Medium", "High", "Critical"];
 const statuses: TicketStatus[] = [
   "Open",
   "In_Progress",

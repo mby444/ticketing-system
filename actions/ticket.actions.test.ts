@@ -46,7 +46,11 @@ vi.mock("@/lib/cloudinary", () => ({
   destroyAsset,
 }));
 
-import { addTicketComment, assignTicket } from "@/actions/ticket.actions";
+import {
+  addTicketComment,
+  assignTicket,
+  createTicket,
+} from "@/actions/ticket.actions";
 
 const OWNER = "owner-1";
 const AGENT = "agent-1";
@@ -59,6 +63,9 @@ const initial = { success: false, message: "" };
 
 const commentForm = (over: Record<string, string | File> = {}) =>
   form({ ticketId: "1", body: "hello", ...over });
+
+const ticketForm = (over: Record<string, string | File> = {}) =>
+  form({ subject: "Broken", description: "It broke", priority: "Low", ...over });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -122,6 +129,59 @@ describe("addTicketComment — validation", () => {
     const res = await addTicketComment(initial, commentForm());
     expect(res.message).toBe("Ticket not found");
     expectNoSideEffects();
+  });
+});
+
+describe("createTicket — priority validation", () => {
+  // `priority` used to be read as `formData.get("priority") as string` and only
+  // checked for truthiness, so any string could be written to the database.
+  beforeEach(() => {
+    prisma.ticket.create.mockResolvedValue({ id: 1 });
+  });
+
+  it.each(["Urgent", "low", "Critical ", "", "High; DROP TABLE Ticket"])(
+    "rejects %j",
+    async (priority) => {
+      const res = await createTicket(initial, ticketForm({ priority }));
+
+      expect(res.success).toBe(false);
+      expect(res.message).toMatch(/Invalid priority|All fields are required/);
+      expect(prisma.ticket.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reports the rejection to Sentry", async () => {
+    await createTicket(initial, ticketForm({ priority: "Urgent" }));
+
+    expect(logEvent).toHaveBeenCalledWith(
+      "Ticket creation rejected: invalid priority",
+      "ticket",
+      expect.objectContaining({ priority: "Urgent" }),
+      "warning",
+    );
+  });
+
+  it.each(["Low", "Medium", "High", "Critical"])(
+    "accepts %s and persists it",
+    async (priority) => {
+      const res = await createTicket(initial, ticketForm({ priority }));
+
+      expect(res.success).toBe(true);
+      expect(prisma.ticket.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ priority }),
+        }),
+      );
+    },
+  );
+
+  it("still requires a session", async () => {
+    getCurrentUser.mockResolvedValue(null);
+
+    const res = await createTicket(initial, ticketForm());
+
+    expect(res.message).toBe("You must be logged in to create a ticket");
+    expect(prisma.ticket.create).not.toHaveBeenCalled();
   });
 });
 

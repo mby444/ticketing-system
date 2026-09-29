@@ -13,6 +13,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { publishJob } from "@/lib/qstash";
 import { buildAssignmentNotifications } from "@/lib/assignment-notifications";
+import { isTicketPriority } from "@/lib/priority";
 import { logEvent } from "@/utils/sentry";
 import * as Sentry from "@sentry/nextjs";
 import { revalidatePath } from "next/cache";
@@ -39,13 +40,25 @@ export const createTicket = async (
 
     const subject = formData.get("subject") as string;
     const description = formData.get("description") as string;
-    const priority = formData.get("priority") as string;
+    const priority = formData.get("priority");
 
     if (!subject || !description || !priority) {
       Sentry.captureMessage("Validation Error: Missing ticket fields", {
         level: "warning",
       });
       return { success: false, message: "All fields are required" };
+    }
+
+    // Same shape as updateTicketStatus' status check: the form posts a raw
+    // string, so it has to be whitelisted before it reaches the database.
+    if (!isTicketPriority(priority)) {
+      logEvent(
+        "Ticket creation rejected: invalid priority",
+        "ticket",
+        { priority: String(priority) },
+        "warning",
+      );
+      return { success: false, message: "Invalid priority value" };
     }
 
     // Collect attachment files (optional — zero files is fine).

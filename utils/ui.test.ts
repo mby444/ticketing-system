@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { getPriorityClass, getStatusClass } from "@/utils/ui";
 import { formatStatus } from "@/utils/string-format";
+import { TicketPriority } from "@/generated/prisma/client";
 
 /**
- * These are `switch` statements with no `default`, so TypeScript infers
- * `string | undefined` and an unrecognised value silently returns undefined.
- * That is exactly the shape of RBAC #6 (`priority` is still a `String` and the
- * seed can produce "Critical"), so it is pinned here rather than fixed.
+ * `getStatusClass` and `formatStatus` are still `switch` statements with no
+ * `default` and a `string` parameter, so an unrecognised value silently yields
+ * undefined — that remaining looseness is tracked as its own backlog item.
+ * `getPriorityClass` no longer has the problem: its parameter is the
+ * `TicketPriority` enum and a test below walks every enum value.
  */
 
 describe("getStatusClass", () => {
@@ -34,16 +36,25 @@ describe("formatStatus", () => {
   });
 });
 
-describe("getPriorityClass — known gap (RBAC #6)", () => {
-  it("styles Low, Medium and High", () => {
+describe("getPriorityClass", () => {
+  it("styles Low, Medium, High and Critical", () => {
     expect(getPriorityClass("Low")).toBeTruthy();
     expect(getPriorityClass("Medium")).toBeTruthy();
     expect(getPriorityClass("High")).toBeTruthy();
+    expect(getPriorityClass("Critical")).toBeTruthy();
   });
 
-  it("has no style for Critical, which the seed can produce", () => {
-    // Not a todo: this documents the *current* broken behaviour so that fixing
-    // RBAC #6 is a deliberate, visible test change rather than a silent one.
-    expect(getPriorityClass("Critical")).toBeUndefined();
+  it("gives Critical a class distinct from High's", () => {
+    // Critical used to fall through this switch and render unstyled, because
+    // `priority` was a plain String with no enum to make it exhaustive.
+    expect(getPriorityClass("Critical")).not.toBe(getPriorityClass("High"));
+  });
+
+  it("styles every value of the enum", () => {
+    // The regression guard that was missing: if a fifth priority is ever added
+    // to the enum and this switch is not updated, this fails.
+    for (const value of Object.values(TicketPriority)) {
+      expect(getPriorityClass(value), `${value} has no style`).toBeTruthy();
+    }
   });
 });

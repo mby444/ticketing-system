@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createTicket } from "@/actions/ticket.actions";
+import { PRIORITY_OPTIONS } from "@/lib/priority";
 import { toast } from "sonner";
 
 // Duplicated from lib/cloudinary.ts — that module imports the Cloudinary SDK
@@ -106,9 +107,11 @@ const NewTicketForm = () => {
           defaultValue="Low"
           disabled={pending}
         >
-          <option value="Low">Low Priority</option>
-          <option value="Medium">Medium Priority</option>
-          <option value="High">High Priority</option>
+          {PRIORITY_OPTIONS.map((option) => (
+            <option key={option} value={option}>
+              {option} Priority
+            </option>
+          ))}
         </select>
 
         <div>

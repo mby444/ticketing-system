@@ -1,4 +1,5 @@
 import { Button, Text } from "@react-email/components";
+import type { TicketPriority } from "@/generated/prisma/client";
 import { EmailLayout } from "./email-layout";
 
 const buttonStyle = {
@@ -19,7 +20,7 @@ export function TicketCreatedEmail({
 }: {
   ticketId: number;
   subject: string;
-  priority: string;
+  priority: TicketPriority;
   ticketUrl: string;
 }) {
   return (

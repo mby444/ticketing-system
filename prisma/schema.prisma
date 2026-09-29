@@ -25,6 +25,15 @@ enum TicketStatus {
   Closed
 }
 
+// Values are capitalised to match TicketStatus and to match the data that
+// already exists, so introducing the enum required no data movement.
+enum TicketPriority {
+  Low
+  Medium
+  High
+  Critical
+}
+
 model User {
   id              String   @id @default(cuid())
   email           String   @unique
@@ -43,7 +52,7 @@ model Ticket {
   id          Int          @id @default(autoincrement())
   subject     String
   description String
-  priority    String
+  priority    TicketPriority
   status      TicketStatus @default(Open)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
