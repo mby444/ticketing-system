@@ -24,6 +24,10 @@ function isValidJob(value: unknown): value is EmailJob {
       return typeof job.newStatus === "string";
     case "NEW_COMMENT":
       return typeof job.commentId === "number";
+    case "TICKET_ASSIGNED":
+      return typeof job.assigneeId === "string";
+    case "TICKET_UNASSIGNED":
+      return typeof job.previousAssigneeId === "string";
     default:
       return false;
   }

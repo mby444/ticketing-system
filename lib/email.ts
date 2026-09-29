@@ -7,6 +7,7 @@ import type { EmailJob } from "@/lib/qstash";
 import { TicketCreatedEmail } from "@/emails/ticket-created";
 import { StatusUpdatedEmail } from "@/emails/status-updated";
 import { NewCommentEmail } from "@/emails/new-comment";
+import { TicketAssignedEmail } from "@/emails/ticket-assigned";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -36,14 +37,16 @@ const formatStatus = (status: string) => status.replace(/_/g, " ");
  * never be stale data from the queue payload. TICKET_CREATED and STATUS_UPDATED
  * always go to the ticket owner; NEW_COMMENT is two-way (a staff reply notifies
  * the owner, a customer reply notifies the assignee) and may legitimately have
- * no recipient at all.
+ * no recipient at all. TICKET_ASSIGNED / TICKET_UNASSIGNED notify exactly one
+ * staff member each — they are published one job per recipient on purpose, so
+ * a retry can never duplicate the other recipient's email.
  */
 export async function sendJobEmail(job: EmailJob): Promise<void> {
   const ticket = await prisma.ticket.findUnique({
     where: { id: job.ticketId },
     include: {
       user: { select: { id: true, email: true } },
-      assignedTo: { select: { id: true, email: true } },
+      assignedTo: { select: { id: true, name: true, email: true } },
     },
   });
 
@@ -145,6 +148,75 @@ export async function sendJobEmail(job: EmailJob): Promise<void> {
           authorName: comment.user.name ?? comment.user.email,
           isStaffAuthor: authorIsStaff,
           body: comment.body,
+          ticketUrl,
+        }),
+      };
+      break;
+    }
+    case "TICKET_ASSIGNED": {
+      // The ticket may have been reassigned again before this job ran, in which
+      // case "you have been assigned" is simply no longer true.
+      if (!ticket.assignedTo || ticket.assignedTo.id !== job.assigneeId) {
+        logEvent(
+          "Email job skipped: ticket has since been reassigned",
+          "email",
+          { ticketId: ticket.id, job },
+          "warning",
+        );
+        return;
+      }
+
+      if (ticket.assignedTo.email === ticket.user.email) {
+        // E.g. an admin assigning a ticket they own to themselves.
+        logEvent(
+          "Email job skipped: assignee owns the ticket",
+          "email",
+          { ticketId: ticket.id },
+          "debug",
+        );
+        return;
+      }
+
+      email = {
+        to: ticket.assignedTo.email,
+        subject: `Ticket #${ticket.id} was assigned to you: ${ticket.subject}`,
+        react: TicketAssignedEmail({
+          variant: "assigned",
+          agentName: ticket.assignedTo.name ?? ticket.assignedTo.email,
+          ticketId: ticket.id,
+          subject: ticket.subject,
+          ticketUrl,
+        }),
+      };
+      break;
+    }
+    case "TICKET_UNASSIGNED": {
+      // The previous assignee has to come from the payload: the ticket row only
+      // remembers the current one. Looked up by id so no address sits in the
+      // broker.
+      const previous = await prisma.user.findUnique({
+        where: { id: job.previousAssigneeId },
+        select: { id: true, name: true, email: true },
+      });
+
+      if (!previous || previous.email === ticket.user.email) {
+        logEvent(
+          "Email job skipped: previous assignee is gone or owns the ticket",
+          "email",
+          { ticketId: ticket.id, job },
+          "warning",
+        );
+        return;
+      }
+
+      email = {
+        to: previous.email,
+        subject: `Ticket #${ticket.id} is no longer assigned to you: ${ticket.subject}`,
+        react: TicketAssignedEmail({
+          variant: "unassigned",
+          agentName: previous.name ?? previous.email,
+          ticketId: ticket.id,
+          subject: ticket.subject,
           ticketUrl,
         }),
       };

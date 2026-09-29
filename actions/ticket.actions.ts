@@ -12,6 +12,7 @@ import {
 } from "@/lib/cloudinary";
 import { prisma } from "@/lib/prisma";
 import { publishJob } from "@/lib/qstash";
+import { buildAssignmentNotifications } from "@/lib/assignment-notifications";
 import { logEvent } from "@/utils/sentry";
 import * as Sentry from "@sentry/nextjs";
 import { revalidatePath } from "next/cache";
@@ -523,9 +524,24 @@ export const assignTicket = async (
       }
     }
 
+    // Read the ticket first: the notification emails need to know the previous
+    // assignee, and a no-op reassignment must not produce any email at all.
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { id: true, assigneeId: true, userId: true },
+    });
+
+    if (!ticket) {
+      logEvent(`Ticket ${ticketId} not found`, "ticket", { ticketId }, "warning");
+      return { success: false, message: "Ticket not found" };
+    }
+
+    const nextAssigneeId = assigneeId || null;
+    const unchanged = ticket.assigneeId === nextAssigneeId;
+
     const { count } = await prisma.ticket.updateMany({
       where: { id: ticketId },
-      data: { assigneeId: assigneeId || null },
+      data: { assigneeId: nextAssigneeId },
     });
 
     if (!count) {
@@ -539,11 +555,20 @@ export const assignTicket = async (
     }
 
     logEvent(
-      assigneeId
-        ? `Ticket ${ticketId} assigned to ${assigneeId}`
-        : `Ticket ${ticketId} unassigned`,
+      unchanged
+        ? `Ticket ${ticketId} assignment unchanged (${nextAssigneeId ?? "none"})`
+        : assigneeId
+          ? `Ticket ${ticketId} assigned to ${assigneeId}`
+          : `Ticket ${ticketId} unassigned`,
       "ticket",
-      { ticketId, assigneeId: assigneeId || null },
+      {
+        ticketId,
+        assigneeId: nextAssigneeId,
+        previousAssigneeId: ticket.assigneeId,
+        ticketOwnerId: ticket.userId,
+        assignedBy: user.id,
+        unchanged,
+      },
       "info",
     );
 
@@ -553,6 +578,18 @@ export const assignTicket = async (
     // too — otherwise the save succeeds but the page keeps showing the old
     // assignee until a manual refresh.
     revalidatePath("/tickets/[id]", "page");
+
+    // Best-effort, one job per recipient: the new assignee is told they own the
+    // ticket, and whoever lost it is told it moved. A no-op change notifies
+    // nobody. Which jobs that is lives in buildAssignmentNotifications so it
+    // stays testable in isolation.
+    for (const { job, deduplicationId } of buildAssignmentNotifications({
+      ticketId,
+      previousAssigneeId: ticket.assigneeId,
+      nextAssigneeId,
+    })) {
+      await publishJob(job, { deduplicationId });
+    }
 
     return {
       success: true,
