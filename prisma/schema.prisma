@@ -44,8 +44,10 @@ model User {
   updatedAt       DateTime @updatedAt
   tickets         Ticket[] @relation("OwnedTickets")
   assignedTickets Ticket[] @relation("AssignedTickets")
-  comments        TicketComment[]
   attachmentsUploaded TicketAttachment[] @relation("UploadedAttachments")
+  // Both User -> TicketComment relations must be named now that there are two.
+  comments        TicketComment[] @relation("CommentAuthor")
+  deletedComments TicketComment[] @relation("CommentDeletedBy")
 }
 
 model Ticket {
@@ -93,7 +95,14 @@ model TicketComment {
   ticketId  Int
   ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User     @relation("CommentAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  // Soft delete. The row is kept so a two-way thread never shows a hole where
+  // a support reply used to be; the body is never rendered once deletedAt is
+  // set. deletedById is SetNull (not Cascade) so removing the moderator later
+  // cannot erase the record of the removal.
+  deletedAt   DateTime?
+  deletedById String?
+  deletedBy   User?    @relation("CommentDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
 
   @@index([ticketId, createdAt])
 }

@@ -1,6 +1,9 @@
 import Image from "next/image";
 import { FaFilePdf } from "react-icons/fa";
 import { getThumbnailUrl } from "@/lib/cloudinary";
+import { canDeleteUserContent } from "@/lib/delete-permissions";
+import { deleteAttachment } from "@/actions/ticket.actions";
+import DeleteButton from "@/components/DeleteButton";
 import type { Role } from "@/generated/prisma/client";
 
 /** Mirrors the `attachments` include in getTicketById. */
@@ -29,13 +32,20 @@ export type TicketAttachmentView = {
  * support. The check is `uploader !== owner` rather than `isStaff(uploader)`
  * because a staff member uploading onto their *own* ticket is not something the
  * customer needs to be told about.
+ *
+ * Note the image tile is a wrapper div, not the <a> itself: nesting the delete
+ * <button> inside a link is invalid interactive content and would also open the
+ * file on click. The delete control therefore sits top-left, opposite the
+ * "Support Staff" badge which already owns top-right.
  */
 const AttachmentList = ({
   attachments,
   ticketOwnerId,
+  viewer,
 }: {
   attachments: TicketAttachmentView[];
   ticketOwnerId: string;
+  viewer: { id: string; role: Role };
 }) => {
   if (attachments.length === 0) return null;
 
@@ -51,50 +61,79 @@ const AttachmentList = ({
             fromSupport ? " (QuickTicket support)" : ""
           } on ${new Date(attachment.createdAt).toLocaleString()}`;
 
+          const canDelete = canDeleteUserContent(
+            viewer,
+            attachment.uploadedBy.id,
+          );
+
           const badge = fromSupport && (
-            <span className="text-[10px] uppercase tracking-wide bg-blue-600 text-white rounded px-1 py-0.5 shrink-0">
+            <span className="text-[10px] uppercase tracking-wide bg-blue-600 text-white rounded px-1 py-0.5 shrink-0 pointer-events-none">
               Support Staff
             </span>
           );
 
+          const deleteControl = canDelete && (
+            <DeleteButton
+              action={deleteAttachment}
+              payload={{ attachmentId: attachment.id }}
+              itemLabel="attachment"
+              className="absolute top-0 left-0"
+            />
+          );
+
           return attachment.mimeType.startsWith("image/") ? (
-            <a
-              key={attachment.id}
-              href={attachment.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={fromSupport ? `${attachment.fileName} — ${trace}` : attachment.fileName}
-              className="relative block w-24 h-24 rounded overflow-hidden border border-gray-200 hover:opacity-80 transition"
-            >
-              <Image
-                src={getThumbnailUrl(attachment)}
-                alt={attachment.fileName}
-                fill
-                sizes="96px"
-                className="object-cover"
-              />
-              {badge && (
-                <span className="absolute top-0 right-0">{badge}</span>
-              )}
-            </a>
+            <div key={attachment.id} className="relative">
+              <a
+                href={attachment.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={
+                  fromSupport
+                    ? `${attachment.fileName} — ${trace}`
+                    : attachment.fileName
+                }
+                className="block w-24 h-24 rounded overflow-hidden border border-gray-200 hover:opacity-80 transition"
+              >
+                <Image
+                  src={getThumbnailUrl(attachment)}
+                  alt={attachment.fileName}
+                  fill
+                  sizes="96px"
+                  className="object-cover"
+                />
+              </a>
+              {badge && <span className="absolute top-0 right-0">{badge}</span>}
+              {deleteControl}
+            </div>
           ) : (
-            <a
+            <div
               key={attachment.id}
-              href={attachment.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={fromSupport ? trace : attachment.fileName}
-              className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded text-sm text-blue-600 hover:bg-blue-50 transition"
+              className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded text-sm"
             >
-              <FaFilePdf className="text-red-500 shrink-0" />
-              <span className="max-w-[10rem] truncate">
-                {attachment.fileName}
-              </span>
-              <span className="text-gray-400 text-xs whitespace-nowrap">
-                ({Math.max(1, Math.round(attachment.size / 1024))} KB)
-              </span>
+              <a
+                href={attachment.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={fromSupport ? trace : attachment.fileName}
+                className="flex items-center gap-2 text-blue-600 hover:underline"
+              >
+                <FaFilePdf className="text-red-500 shrink-0" />
+                <span className="max-w-[10rem] truncate">
+                  {attachment.fileName}
+                </span>
+                <span className="text-gray-400 text-xs whitespace-nowrap">
+                  ({Math.max(1, Math.round(attachment.size / 1024))} KB)
+                </span>
+              </a>
               {badge}
-            </a>
+              {canDelete && (
+                <DeleteButton
+                  action={deleteAttachment}
+                  payload={{ attachmentId: attachment.id }}
+                  itemLabel="attachment"
+                />
+              )}
+            </div>
           );
         })}
       </div>

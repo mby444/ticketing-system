@@ -14,6 +14,7 @@ import { prisma } from "@/lib/prisma";
 import { publishJob } from "@/lib/qstash";
 import { buildAssignmentNotifications } from "@/lib/assignment-notifications";
 import { isTicketPriority } from "@/lib/priority";
+import { canDeleteUserContent } from "@/lib/delete-permissions";
 import { logEvent } from "@/utils/sentry";
 import * as Sentry from "@sentry/nextjs";
 import { revalidatePath } from "next/cache";
@@ -255,6 +256,11 @@ export const getTicketById = async (id: number) => {
           include: {
             user: {
               select: { id: true, name: true, email: true, role: true },
+            },
+            // Soft-deleted comments are returned on purpose — the thread renders
+            // them as "[removed]" so a two-way conversation never has a hole.
+            deletedBy: {
+              select: { id: true, name: true, email: true },
             },
           },
         },
@@ -801,6 +807,223 @@ export const addAttachments = async (
       error,
     );
     return { success: false, message: "Failed to add attachments" };
+  }
+};
+
+/**
+ * Hard-deletes one attachment and destroys its Cloudinary asset.
+ *
+ * The row is deleted BEFORE the asset on purpose. The reverse order can leave a
+ * row pointing at a file that no longer exists, which breaks the thumbnail
+ * visibly; this way a failed destroy leaves only an orphaned asset, which is
+ * invisible to users and already reported to Sentry by destroyAsset's own
+ * best-effort contract.
+ */
+export const deleteAttachment = async (
+  prevState: ActionState,
+  formData: FormData,
+) => {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      logEvent("Unauthorized attachment delete attempt", "ticket", {}, "warning");
+      return { success: false, message: "You must be logged in" };
+    }
+
+    const attachmentId = String(formData.get("attachmentId") ?? "");
+    if (!attachmentId) {
+      logEvent("Validation error: Missing attachment ID", "ticket", {}, "warning");
+      return { success: false, message: "Attachment ID is required" };
+    }
+
+    const attachment = await prisma.ticketAttachment.findUnique({
+      where: { id: attachmentId },
+    });
+    if (!attachment) {
+      logEvent(
+        "Attachment delete: not found",
+        "ticket",
+        { attachmentId },
+        "warning",
+      );
+      return { success: false, message: "Attachment not found" };
+    }
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: attachment.ticketId },
+      select: { userId: true },
+    });
+
+    // Belt and braces: being the uploader does not by itself prove you can still
+    // reach the ticket — a staff member who was later demoted is still the
+    // author but no longer passes canAccessTicket.
+    if (!ticket || !canAccessTicket(user, ticket)) {
+      logEvent(
+        "Unauthorized attachment delete attempt",
+        "ticket",
+        { attachmentId, ticketId: attachment.ticketId, userId: user.id },
+        "warning",
+      );
+      return {
+        success: false,
+        message: "You are not allowed to delete this attachment",
+      };
+    }
+
+    if (!canDeleteUserContent(user, attachment.uploadedById)) {
+      logEvent(
+        "Attachment delete rejected: not the uploader and not staff",
+        "ticket",
+        { attachmentId, ticketId: attachment.ticketId, userId: user.id },
+        "warning",
+      );
+      return {
+        success: false,
+        message: "You are not allowed to delete this attachment",
+      };
+    }
+
+    await prisma.ticketAttachment.delete({ where: { id: attachmentId } });
+
+    // destroyAsset is already best-effort and swallows its own errors, but the
+    // row is gone at this point: showing the user a failure would be a lie. The
+    // try/catch locks that invariant even if the helper ever stops swallowing.
+    try {
+      await destroyAsset(attachment.publicId, attachment.resourceType);
+    } catch (error) {
+      logEvent(
+        "Cloudinary asset destroy threw after the row was deleted",
+        "ticket",
+        { attachmentId, publicId: attachment.publicId },
+        "error",
+        error,
+      );
+    }
+
+    logEvent(
+      `Attachment ${attachmentId} deleted from ticket ${attachment.ticketId}`,
+      "ticket",
+      {
+        ticketId: attachment.ticketId,
+        attachmentId,
+        fileName: attachment.fileName,
+        uploadedById: attachment.uploadedById,
+        deletedBy: user.id,
+        deletedByRole: user.role,
+      },
+      "info",
+    );
+
+    revalidatePath("/tickets");
+    revalidatePath("/tickets/[id]", "page");
+
+    return { success: true, message: "Attachment deleted" };
+  } catch (error) {
+    logEvent(
+      "Failed to delete attachment",
+      "ticket",
+      { attachmentId: formData.get("attachmentId") },
+      "error",
+      error,
+    );
+    return { success: false, message: "Failed to delete attachment" };
+  }
+};
+
+/**
+ * Soft-deletes one comment: the row survives so a two-way thread never shows a
+ * hole where a reply used to be, but the body stops being rendered.
+ *
+ * Works on a Closed ticket on purpose — retracting your own words is not new
+ * conversation, which is the reason comments cannot be *added* there.
+ */
+export const deleteComment = async (
+  prevState: ActionState,
+  formData: FormData,
+) => {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      logEvent("Unauthorized comment delete attempt", "ticket", {}, "warning");
+      return { success: false, message: "You must be logged in" };
+    }
+
+    const commentId = Number(formData.get("commentId"));
+    if (!commentId) {
+      logEvent("Validation error: Missing comment ID", "ticket", {}, "warning");
+      return { success: false, message: "Comment ID is required" };
+    }
+
+    const comment = await prisma.ticketComment.findUnique({
+      where: { id: commentId },
+    });
+    if (!comment) {
+      logEvent("Comment delete: not found", "ticket", { commentId }, "warning");
+      return { success: false, message: "Comment not found" };
+    }
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: comment.ticketId },
+      select: { userId: true },
+    });
+
+    if (!ticket || !canAccessTicket(user, ticket)) {
+      logEvent(
+        "Unauthorized comment delete attempt",
+        "ticket",
+        { commentId, ticketId: comment.ticketId, userId: user.id },
+        "warning",
+      );
+      return { success: false, message: "You are not allowed to delete this comment" };
+    }
+
+    if (!canDeleteUserContent(user, comment.userId)) {
+      logEvent(
+        "Comment delete rejected: not the author and not staff",
+        "ticket",
+        { commentId, ticketId: comment.ticketId, userId: user.id },
+        "warning",
+      );
+      return { success: false, message: "You are not allowed to delete this comment" };
+    }
+
+    if (comment.deletedAt) {
+      // Idempotent: a double submit should not re-stamp the row.
+      return { success: true, message: "Comment already removed" };
+    }
+
+    await prisma.ticketComment.update({
+      where: { id: commentId },
+      data: { deletedAt: new Date(), deletedById: user.id },
+    });
+
+    logEvent(
+      `Comment ${commentId} removed from ticket ${comment.ticketId}`,
+      "ticket",
+      {
+        ticketId: comment.ticketId,
+        commentId,
+        authorId: comment.userId,
+        deletedBy: user.id,
+        deletedByRole: user.role,
+        deletedByIsAuthor: user.id === comment.userId,
+      },
+      "info",
+    );
+
+    revalidatePath("/tickets");
+    revalidatePath("/tickets/[id]", "page");
+
+    return { success: true, message: "Comment removed" };
+  } catch (error) {
+    logEvent(
+      "Failed to delete comment",
+      "ticket",
+      { commentId: formData.get("commentId") },
+      "error",
+      error,
+    );
+    return { success: false, message: "Failed to remove comment" };
   }
 };
 

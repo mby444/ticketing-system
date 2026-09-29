@@ -89,6 +89,7 @@ const TicketDetailsPage = async (props: {
         <AttachmentList
           attachments={ticket.attachments}
           ticketOwnerId={ticket.userId}
+          viewer={viewer}
         />
 
         <div className="text-gray-700">
@@ -102,6 +103,7 @@ const TicketDetailsPage = async (props: {
               viewerId={viewer.id}
               ticketOwnerId={ticket.userId}
               isClosed={isClosed}
+              viewer={viewer}
             />
             <CommentForm ticketId={ticket.id} isClosed={isClosed} />
           </div>

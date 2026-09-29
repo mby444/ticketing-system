@@ -50,6 +50,8 @@ import {
   addTicketComment,
   assignTicket,
   createTicket,
+  deleteAttachment,
+  deleteComment,
 } from "@/actions/ticket.actions";
 
 const OWNER = "owner-1";
@@ -67,10 +69,37 @@ const commentForm = (over: Record<string, string | File> = {}) =>
 const ticketForm = (over: Record<string, string | File> = {}) =>
   form({ subject: "Broken", description: "It broke", priority: "Low", ...over });
 
+const ATT_ID = "att-1";
+const COMMENT_ID = 900;
+
+/** A row the delete actions can read: ownership is the whole permission story. */
+const attachmentRow = (uploadedById: string) => ({
+  id: ATT_ID,
+  ticketId: 1,
+  fileName: "shot.png",
+  publicId: "quickticket/tickets/abc",
+  resourceType: "image",
+  uploadedById,
+});
+
+const commentRow = (userId: string, deletedAt: Date | null = null) => ({
+  id: COMMENT_ID,
+  ticketId: 1,
+  userId,
+  deletedAt,
+});
+
 beforeEach(() => {
-  vi.clearAllMocks();
+  // resetAllMocks, not clearAllMocks: clear only wipes call history, so any
+  // mockResolvedValue/mockRejectedValue set by a previous test survives and
+  // silently poisons the next one. Defaults are re-established below, after
+  // the reset.
+  vi.resetAllMocks();
   validateAttachmentFile.mockReturnValue(null);
-  // Default happy-path DB reads; individual tests override these.
+  uploadAttachment.mockResolvedValue({} as never);
+  // destroyAsset is best-effort and never throws in production; the default has
+  // to resolve so a single test that forces a rejection cannot leak.
+  destroyAsset.mockResolvedValue(undefined);
   getCurrentUser.mockResolvedValue(client);
   prisma.ticket.findUnique.mockResolvedValue(makeTicket({ userId: OWNER, status: "Open" }));
   prisma.ticketComment.create.mockResolvedValue({ id: 900, body: "hello" });
@@ -469,6 +498,248 @@ describe("assignTicket — notifications", () => {
     await assignTicket(initial, assignForm(AGENT));
 
     expect(revalidatePath).toHaveBeenCalledWith("/dashboard");
+    expect(revalidatePath).toHaveBeenCalledWith("/tickets");
+    expect(revalidatePath).toHaveBeenCalledWith("/tickets/[id]", "page");
+  });
+});
+
+describe("deleteAttachment", () => {
+  const form = () => new FormData();
+  const attachForm = (id: string) => {
+    const data = new FormData();
+    data.set("attachmentId", id);
+    return data;
+  };
+
+  beforeEach(() => {
+    prisma.ticketAttachment.findUnique.mockResolvedValue(
+      attachmentRow(OWNER) as never,
+    );
+    prisma.ticketAttachment.delete.mockResolvedValue({} as never);
+    prisma.ticket.findUnique.mockResolvedValue(
+      makeTicket({ userId: OWNER, status: "Open" }) as never,
+    );
+  });
+
+  it("requires a session", async () => {
+    getCurrentUser.mockResolvedValue(null);
+
+    const res = await deleteAttachment(initial, attachForm(ATT_ID));
+    expect(res.message).toBe("You must be logged in");
+    expect(prisma.ticketAttachment.delete).not.toHaveBeenCalled();
+  });
+
+  it("requires an attachment id", async () => {
+    const res = await deleteAttachment(initial, form());
+    expect(res.message).toBe("Attachment ID is required");
+  });
+
+  it("reports a missing attachment", async () => {
+    prisma.ticketAttachment.findUnique.mockResolvedValue(null);
+
+    const res = await deleteAttachment(initial, attachForm(ATT_ID));
+    expect(res.message).toBe("Attachment not found");
+    expect(prisma.ticketAttachment.delete).not.toHaveBeenCalled();
+  });
+
+  it("lets the uploader delete their own file", async () => {
+    getCurrentUser.mockResolvedValue(client);
+
+    const res = await deleteAttachment(initial, attachForm(ATT_ID));
+    expect(res).toEqual({ success: true, message: "Attachment deleted" });
+    expect(prisma.ticketAttachment.delete).toHaveBeenCalledWith({
+      where: { id: ATT_ID },
+    });
+  });
+
+  it("denies a client deleting a file support uploaded", async () => {
+    getCurrentUser.mockResolvedValue(client);
+    prisma.ticketAttachment.findUnique.mockResolvedValue(
+      attachmentRow(AGENT) as never,
+    );
+
+    const res = await deleteAttachment(initial, attachForm(ATT_ID));
+    expect(res.message).toBe("You are not allowed to delete this attachment");
+    expect(prisma.ticketAttachment.delete).not.toHaveBeenCalled();
+    expect(destroyAsset).not.toHaveBeenCalled();
+  });
+
+  it("lets staff delete anybody's file", async () => {
+    getCurrentUser.mockResolvedValue(agent);
+    prisma.ticketAttachment.findUnique.mockResolvedValue(
+      attachmentRow(OWNER) as never,
+    );
+
+    const res = await deleteAttachment(initial, attachForm(ATT_ID));
+    expect(res.success).toBe(true);
+    expect(prisma.ticketAttachment.delete).toHaveBeenCalledOnce();
+  });
+
+  it("denies a uploader who can no longer reach the ticket", async () => {
+    // Demoted staff: still the author, but canAccessTicket now fails.
+    getCurrentUser.mockResolvedValue(makeUser({ id: AGENT, role: "CLIENT" }));
+    prisma.ticketAttachment.findUnique.mockResolvedValue(
+      attachmentRow(AGENT) as never,
+    );
+    prisma.ticket.findUnique.mockResolvedValue(
+      makeTicket({ userId: OWNER, status: "Open" }) as never,
+    );
+
+    const res = await deleteAttachment(initial, attachForm(ATT_ID));
+    expect(res.success).toBe(false);
+    expect(prisma.ticketAttachment.delete).not.toHaveBeenCalled();
+  });
+
+  it("destroys the Cloudinary asset with the right arguments", async () => {
+    getCurrentUser.mockResolvedValue(client);
+
+    await deleteAttachment(initial, attachForm(ATT_ID));
+
+    expect(destroyAsset).toHaveBeenCalledWith(
+      "quickticket/tickets/abc",
+      "image",
+    );
+  });
+
+  it("deletes the row BEFORE destroying the asset", async () => {
+    // The reverse order can leave a row pointing at a file that no longer
+    // exists, which breaks the thumbnail visibly.
+    getCurrentUser.mockResolvedValue(client);
+
+    await deleteAttachment(initial, attachForm(ATT_ID));
+
+    const deleteOrder = prisma.ticketAttachment.delete.mock
+      .invocationCallOrder[0];
+    const destroyOrder = destroyAsset.mock.invocationCallOrder[0];
+    expect(deleteOrder).toBeLessThan(destroyOrder);
+  });
+
+  it("still reports success when the asset destroy throws", async () => {
+    getCurrentUser.mockResolvedValue(client);
+    destroyAsset.mockRejectedValue(new Error("Cloudinary down"));
+
+    // The row is already gone by then, so reporting a failure would be a lie.
+    await expect(
+      deleteAttachment(initial, attachForm(ATT_ID)),
+    ).resolves.toEqual({ success: true, message: "Attachment deleted" });
+  });
+
+  it("revalidates the list and the detail page", async () => {
+    getCurrentUser.mockResolvedValue(client);
+
+    await deleteAttachment(initial, attachForm(ATT_ID));
+
+    expect(revalidatePath).toHaveBeenCalledWith("/tickets");
+    expect(revalidatePath).toHaveBeenCalledWith("/tickets/[id]", "page");
+  });
+});
+
+describe("deleteComment", () => {
+  const commentForm = (id: string) => {
+    const data = new FormData();
+    data.set("commentId", id);
+    return data;
+  };
+
+  beforeEach(() => {
+    prisma.ticketComment.findUnique.mockResolvedValue(
+      commentRow(OWNER) as never,
+    );
+    prisma.ticketComment.update.mockResolvedValue({} as never);
+    prisma.ticket.findUnique.mockResolvedValue(
+      makeTicket({ userId: OWNER, status: "Open" }) as never,
+    );
+  });
+
+  it("requires a session", async () => {
+    getCurrentUser.mockResolvedValue(null);
+
+    const res = await deleteComment(initial, commentForm(String(COMMENT_ID)));
+    expect(res.message).toBe("You must be logged in");
+    expect(prisma.ticketComment.update).not.toHaveBeenCalled();
+  });
+
+  it("requires a comment id", async () => {
+    const res = await deleteComment(initial, new FormData());
+    expect(res.message).toBe("Comment ID is required");
+  });
+
+  it("reports a missing comment", async () => {
+    prisma.ticketComment.findUnique.mockResolvedValue(null);
+
+    const res = await deleteComment(initial, commentForm(String(COMMENT_ID)));
+    expect(res.message).toBe("Comment not found");
+  });
+
+  it("lets the author remove their own comment", async () => {
+    getCurrentUser.mockResolvedValue(client);
+
+    const res = await deleteComment(initial, commentForm(String(COMMENT_ID)));
+    expect(res).toEqual({ success: true, message: "Comment removed" });
+    expect(prisma.ticketComment.update).toHaveBeenCalledWith({
+      where: { id: COMMENT_ID },
+      data: { deletedAt: expect.any(Date), deletedById: OWNER },
+    });
+  });
+
+  it("never hard-deletes the row", async () => {
+    getCurrentUser.mockResolvedValue(client);
+
+    await deleteComment(initial, commentForm(String(COMMENT_ID)));
+
+    expect(prisma.ticketComment.delete).not.toHaveBeenCalled();
+  });
+
+  it("denies a client removing a support reply", async () => {
+    getCurrentUser.mockResolvedValue(client);
+    prisma.ticketComment.findUnique.mockResolvedValue(commentRow(AGENT) as never);
+
+    const res = await deleteComment(initial, commentForm(String(COMMENT_ID)));
+    expect(res.message).toBe("You are not allowed to delete this comment");
+    expect(prisma.ticketComment.update).not.toHaveBeenCalled();
+  });
+
+  it("lets staff moderate any comment", async () => {
+    getCurrentUser.mockResolvedValue(agent);
+    prisma.ticketComment.findUnique.mockResolvedValue(commentRow(OWNER) as never);
+
+    const res = await deleteComment(initial, commentForm(String(COMMENT_ID)));
+    expect(res.success).toBe(true);
+    expect(prisma.ticketComment.update).toHaveBeenCalledWith({
+      where: { id: COMMENT_ID },
+      data: { deletedAt: expect.any(Date), deletedById: AGENT },
+    });
+  });
+
+  it("is idempotent when the comment is already removed", async () => {
+    getCurrentUser.mockResolvedValue(client);
+    prisma.ticketComment.findUnique.mockResolvedValue(
+      commentRow(OWNER, new Date()) as never,
+    );
+
+    const res = await deleteComment(initial, commentForm(String(COMMENT_ID)));
+
+    expect(res).toEqual({ success: true, message: "Comment already removed" });
+    expect(prisma.ticketComment.update).not.toHaveBeenCalled();
+  });
+
+  it("works on a Closed ticket", async () => {
+    // Retracting your own words is not new conversation, which is the reason
+    // comments cannot be *added* to a closed ticket.
+    getCurrentUser.mockResolvedValue(client);
+    prisma.ticket.findUnique.mockResolvedValue(
+      makeTicket({ userId: OWNER, status: "Closed" }) as never,
+    );
+
+    const res = await deleteComment(initial, commentForm(String(COMMENT_ID)));
+    expect(res.success).toBe(true);
+  });
+
+  it("revalidates the list and the detail page", async () => {
+    getCurrentUser.mockResolvedValue(client);
+
+    await deleteComment(initial, commentForm(String(COMMENT_ID)));
+
     expect(revalidatePath).toHaveBeenCalledWith("/tickets");
     expect(revalidatePath).toHaveBeenCalledWith("/tickets/[id]", "page");
   });
