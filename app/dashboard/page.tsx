@@ -9,7 +9,15 @@ import {
   DEFAULT_DASHBOARD_FILTER,
   filterDashboardTickets,
   parseDashboardFilter,
+  type DashboardFilter,
 } from "@/lib/dashboard-filters";
+import {
+  buildDashboardHref,
+  DASHBOARD_SORT_LABELS,
+  DEFAULT_DASHBOARD_SORT,
+  parseDashboardSort,
+  sortDashboardTickets,
+} from "@/lib/dashboard-sort";
 import TicketTable from "@/components/dashboard/TicketTable";
 
 const SectionHeading = ({
@@ -38,14 +46,17 @@ const EmptyNote = ({ children }: { children: ReactNode }) => (
 /**
  * Triage filters, rendered as plain links. No client component and no state:
  * the active filter lives in `?filter=`, so a view is bookmarkable, survives a
- * refresh, and keeps working without JS. The href is built from the whitelisted
- * constant, never from the raw query value.
+ * refresh, and keeps working without JS. The href is built by
+ * `buildDashboardHref`, which also carries the active `?sort=` — the previous
+ * hardcoded `/dashboard?filter=x` silently dropped it.
  */
 const FilterNav = ({
   filter,
+  sort,
   counts,
 }: {
-  filter: (typeof DASHBOARD_FILTERS)[number];
+  filter: DashboardFilter;
+  sort: ReturnType<typeof parseDashboardSort>;
   counts: Record<string, number>;
 }) => (
   <nav
@@ -57,11 +68,7 @@ const FilterNav = ({
       return (
         <Link
           key={option}
-          href={
-            option === DEFAULT_DASHBOARD_FILTER
-              ? "/dashboard"
-              : `/dashboard?filter=${option}`
-          }
+          href={buildDashboardHref({ filter: option, sort })}
           scroll={false}
           aria-current={active ? "page" : undefined}
           className={`px-3 py-1.5 rounded-full text-sm border transition ${
@@ -83,7 +90,7 @@ const FilterNav = ({
 const StaffDashboardPage = async (props: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) => {
-  // Role guard stays first: `?filter=` must never be a way around it.
+  // Role guard stays first: neither `?filter=` nor `?sort=` may be a way around it.
   const user = await requireRole(...STAFF_ROLES);
   const [params, tickets, agents] = await Promise.all([
     props.searchParams,
@@ -92,7 +99,11 @@ const StaffDashboardPage = async (props: {
   ]);
 
   const filter = parseDashboardFilter(params.filter);
-  const filtered = filterDashboardTickets(tickets, filter, user.id);
+  const sort = parseDashboardSort(params.sort);
+  const filtered = sortDashboardTickets(
+    filterDashboardTickets(tickets, filter, user.id),
+    sort,
+  );
   const counts = Object.fromEntries(
     DASHBOARD_FILTERS.map((option) => [
       option,
@@ -100,17 +111,19 @@ const StaffDashboardPage = async (props: {
     ]),
   );
 
-  // Partition of the single getAllTickets() query: "Assigned to me" sorts
-  // active statuses before Closed, then newest first; "Other tickets"
-  // keeps the original createdAt-desc order.
-  const mine = tickets
-    .filter((ticket) => ticket.assigneeId === user.id)
-    .sort(
-      (a, b) =>
-        Number(a.status === "Closed") - Number(b.status === "Closed") ||
-        b.createdAt.getTime() - a.createdAt.getTime(),
-    );
-  const others = tickets.filter((ticket) => ticket.assigneeId !== user.id);
+  // Partition of the single getAllTickets() query. Both slices now take the same
+  // sort: the previous per-section special case ("active before Closed" here,
+  // plain createdAt order there) was exactly status_asc plus a recency tie-break,
+  // so expressing it as one sort removes the branch — at the cost of the "Other
+  // tickets" row order changing to workflow order, which is the point.
+  const mine = sortDashboardTickets(
+    tickets.filter((ticket) => ticket.assigneeId === user.id),
+    sort,
+  );
+  const others = sortDashboardTickets(
+    tickets.filter((ticket) => ticket.assigneeId !== user.id),
+    sort,
+  );
 
   const filteredView = filter !== DEFAULT_DASHBOARD_FILTER;
 
@@ -124,18 +137,18 @@ const StaffDashboardPage = async (props: {
           {filteredView ? (
             <>
               Showing {filtered.length} of {tickets.length} tickets —{" "}
-              {DASHBOARD_FILTER_LABELS[filter]}
+              {DASHBOARD_FILTER_LABELS[filter]}, {DASHBOARD_SORT_LABELS[sort].toLowerCase()}
             </>
           ) : (
             <>
               {mine.length} assigned to you · {tickets.length} ticket
-              {tickets.length === 1 ? "" : "s"} total — update status and
-              assign agents
+              {tickets.length === 1 ? "" : "s"} total — sorted by{" "}
+              {DASHBOARD_SORT_LABELS[sort].toLowerCase()}
             </>
           )}
         </p>
 
-        <FilterNav filter={filter} counts={counts} />
+        <FilterNav filter={filter} sort={sort} counts={counts} />
 
         {tickets.length === 0 ? (
           <p className="text-center text-gray-600">No Tickets Yet</p>
@@ -145,8 +158,23 @@ const StaffDashboardPage = async (props: {
           // contain anything assigned to you — and an empty "Assigned to me"
           // note would read as bad news rather than as the filter working.
           filtered.length === 0 ? (
+            // No table means no column headers, so without this link a staff
+            // member who filtered down to nothing would have no way to change
+            // the sort at all.
             <EmptyNote>
-              No tickets match “{DASHBOARD_FILTER_LABELS[filter]}”
+              No tickets match “{DASHBOARD_FILTER_LABELS[filter]}”.{" "}
+              {sort !== DEFAULT_DASHBOARD_SORT && (
+                <>
+                  <Link
+                    href={buildDashboardHref({ filter, sort: DEFAULT_DASHBOARD_SORT })}
+                    scroll={false}
+                    className="text-blue-600 hover:underline"
+                  >
+                    Reset the sort
+                  </Link>{" "}
+                  to see more.
+                </>
+              )}
             </EmptyNote>
           ) : (
             <section>
@@ -154,7 +182,7 @@ const StaffDashboardPage = async (props: {
                 title={DASHBOARD_FILTER_LABELS[filter]}
                 count={filtered.length}
               />
-              <TicketTable tickets={filtered} agents={agents} />
+              <TicketTable tickets={filtered} agents={agents} filter={filter} sort={sort} />
             </section>
           )
         ) : (
@@ -164,7 +192,7 @@ const StaffDashboardPage = async (props: {
               {mine.length === 0 ? (
                 <EmptyNote>No tickets assigned to you yet</EmptyNote>
               ) : (
-                <TicketTable tickets={mine} agents={agents} />
+                <TicketTable tickets={mine} agents={agents} filter={filter} sort={sort} />
               )}
             </section>
 
@@ -173,7 +201,7 @@ const StaffDashboardPage = async (props: {
               {others.length === 0 ? (
                 <EmptyNote>No other tickets</EmptyNote>
               ) : (
-                <TicketTable tickets={others} agents={agents} />
+                <TicketTable tickets={others} agents={agents} filter={filter} sort={sort} />
               )}
             </section>
           </>
