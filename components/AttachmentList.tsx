@@ -35,8 +35,9 @@ export type TicketAttachmentView = {
  *
  * Note the image tile is a wrapper div, not the <a> itself: nesting the delete
  * <button> inside a link is invalid interactive content and would also open the
- * file on click. The delete control therefore sits top-left, opposite the
- * "Support Staff" badge which already owns top-right.
+ * file on click. The delete control therefore floats over the tile — trash icon
+ * top-right, badge bottom-left — and confirms with an in-card overlay so the row
+ * never reflows.
  */
 const AttachmentList = ({
   attachments,
@@ -77,7 +78,7 @@ const AttachmentList = ({
               action={deleteAttachment}
               payload={{ attachmentId: attachment.id }}
               itemLabel="attachment"
-              className="absolute top-0 left-0"
+              variant="card"
             />
           );
 
@@ -102,7 +103,7 @@ const AttachmentList = ({
                   className="object-cover"
                 />
               </a>
-              {badge && <span className="absolute top-0 right-0">{badge}</span>}
+              {badge && <span className="absolute bottom-0 left-0">{badge}</span>}
               {deleteControl}
             </div>
           ) : (
