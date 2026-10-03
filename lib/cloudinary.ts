@@ -1,27 +1,22 @@
 import { v2 as cloudinary, type UploadApiResponse } from "cloudinary";
 import { logEvent } from "@/utils/sentry";
+import {
+  ALLOWED_MIME_TYPES,
+  MAX_FILES,
+  MAX_FILE_SIZE,
+} from "@/lib/attachment-limits";
 
 /**
  * Server-side Cloudinary helpers for ticket attachments.
  *
- * IMPORTANT: this module pulls in the Cloudinary SDK — never import it from a
- * `"use client"` component. Client-side pre-checks must duplicate the small
- * constants below (see app/tickets/new/ticket-form.tsx).
+ * IMPORTANT: this module pulls in the Cloudinary SDK and, through
+ * `@/utils/sentry`, the Sentry SDK — never import it from a `"use client"`
+ * component. The three limits it used to own now live in the dependency-free
+ * `lib/attachment-limits.ts`, so a client component or a unit test can import
+ * the real values instead of copying them; they are re-exported here so every
+ * existing call site keeps working unchanged.
  */
-
-/** MIME types accepted for attachments (mirrored in ticket-form.tsx). */
-export const ALLOWED_MIME_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "application/pdf",
-] as const;
-
-/** Max 5 MB per file. */
-export const MAX_FILE_SIZE = 5 * 1024 * 1024;
-
-/** Max attachments per ticket (bounds the request body to ~30MB, see next.config.ts). */
-export const MAX_FILES = 5;
+export { ALLOWED_MIME_TYPES, MAX_FILES, MAX_FILE_SIZE };
 
 /** Cloudinary Media Library folder for all ticket attachments. */
 export const ATTACHMENTS_FOLDER = "quickticket/tickets";
