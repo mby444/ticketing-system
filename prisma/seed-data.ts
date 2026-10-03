@@ -404,6 +404,11 @@ export type PlannedTicket = {
   assigneeStaffIndex: number | null;
   comments: PlannedComment[];
   attachments: PlannedAttachment[];
+  // Notifications are NOT planned here on purpose. They are derived in seed.ts
+  // from tickets and comments by calling `buildNotificationJobs`, the same pure
+  // helper the app uses. An earlier draft planned them here and then re-derived
+  // recipients in the writer, which meant two implementations of the same rules
+  // that could silently disagree.
 };
 
 export type SeedPlan = {
@@ -611,6 +616,11 @@ export const buildSeedPlan = (options: BuildPlanOptions = {}): SeedPlan => {
       }
 
       const ticketIndex = tickets.length;
+
+      const assigneeStaffIndex = rng.chance(profile.assignedChance)
+        ? rng.pick(staff)
+        : null;
+
       tickets.push({
         templateIndex,
         subject: template.subject,
@@ -619,9 +629,7 @@ export const buildSeedPlan = (options: BuildPlanOptions = {}): SeedPlan => {
         status: profile.status,
         createdAt,
         ownerIndex,
-        assigneeStaffIndex: rng.chance(profile.assignedChance)
-          ? rng.pick(staff)
-          : null,
+        assigneeStaffIndex,
         comments,
         attachments,
       });

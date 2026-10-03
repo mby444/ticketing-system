@@ -1,10 +1,15 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/current-user";
 import { isStaff } from "@/lib/authorization";
+import { getNotifications, getUnreadCount } from "@/actions/notification.actions";
 import LogoutButton from "./LogoutButton";
+import NotificationBell from "./NotificationBell";
 
 const Navbar = async () => {
   const user = await getCurrentUser();
+
+  const unreadCount = user ? await getUnreadCount() : 0;
+  const initialNotifications = user ? await getNotifications() : [];
 
   return (
     <nav className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
@@ -39,6 +44,10 @@ const Navbar = async () => {
             <span className="text-xs uppercase tracking-wide text-gray-500 border border-gray-200 rounded px-2 py-1">
               {user.role.replace("_", " ")}
             </span>
+            <NotificationBell
+              unreadCount={unreadCount}
+              initialNotifications={initialNotifications}
+            />
             <LogoutButton />
           </>
         ) : (

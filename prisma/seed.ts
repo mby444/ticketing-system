@@ -1,5 +1,6 @@
 import { v2 as cloudinary } from "cloudinary";
 import { prisma } from "@/lib/prisma";
+import { buildNotificationJobs } from "@/lib/notifications";
 import {
   buildSeedPlan,
   DEFAULT_TICKETS_PER_USER,
@@ -7,6 +8,7 @@ import {
   type SeedPlan,
 } from "@/prisma/seed-data";
 import { bytesFor } from "@/prisma/seed-files";
+import { NotificationType } from "@/generated/prisma/client";
 import bcrypt from "bcryptjs";
 
 /**
@@ -25,6 +27,23 @@ import bcrypt from "bcryptjs";
 const SEED_ATTACHMENTS_FOLDER = "quickticket/seed";
 
 const SEED_PASSWORD = "password123";
+
+const addMinutes = (date: Date, minutes: number): Date =>
+  new Date(date.getTime() + minutes * 60 * 1000);
+
+/**
+ * A seeded notification is already read if it is older than this.
+ *
+ * Derived from the row's own timestamp rather than a random roll, so it needs no
+ * extra RNG stream and stays identical between two runs of the same seed. It also
+ * produces something realistic: the recent window stays unread so the badge is
+ * non-zero on a fresh seed, and older activity has been read.
+ */
+const NOTIFICATION_READ_AFTER_DAYS = 7;
+const readAtFor = (createdAt: Date, now: Date): Date | null =>
+  createdAt.getTime() + NOTIFICATION_READ_AFTER_DAYS * 86_400_000 < now.getTime()
+    ? addMinutes(createdAt, 30)
+    : null;
 
 // ---------------------------------------------------------------------------
 // Environment overrides
@@ -464,6 +483,120 @@ async function main() {
     }
   }
 
+  // --- notifications --------------------------------------------------------
+  // Recipients and content come from `buildNotificationJobs`, the SAME pure
+  // helper the ticket actions use. An earlier draft re-implemented the rules
+  // here, which meant the seed could quietly disagree with the app about who
+  // gets told — and it did: customer replies were titled "New reply on your
+  // ticket", and it keyed NEW_COMMENT on the comment's position instead of its
+  // id. Reusing the helper makes both impossible by construction.
+  console.log(`Menulis notifikasi...`);
+
+  const staffIds = staffIndexes.map((index) => userIds[index]);
+  const adminId = userIds[adminIndex];
+  const seededAt = new Date();
+  const notificationRows: {
+    userId: string;
+    type: NotificationType;
+    ticketId: number;
+    title: string;
+    body: string;
+    dedupeKey: string;
+    createdAt: Date;
+    readAt: Date | null;
+  }[] = [];
+
+  plan.tickets.forEach((plannedTicket, ticketIndex) => {
+    const ticketId = ticketIds[ticketIndex];
+    const ownerId = userIds[plannedTicket.ownerIndex];
+    const assigneeId =
+      plannedTicket.assigneeStaffIndex === null
+        ? null
+        : userIds[plannedTicket.assigneeStaffIndex];
+
+    const baseContext = {
+      ticket: {
+        id: ticketId,
+        userId: ownerId,
+        assigneeId,
+        subject: plannedTicket.subject,
+      },
+      staffIds,
+    };
+
+    // TICKET_CREATED is the customer filing their own ticket, so the actor is
+    // the owner and every member of staff hears about it.
+    const created = plannedTicket.createdAt;
+    for (const job of buildNotificationJobs(
+      { type: "TICKET_CREATED", ticketId },
+      { ...baseContext, actor: { id: ownerId, role: "CLIENT" } },
+    )) {
+      notificationRows.push({
+        ...job,
+        createdAt: created,
+        readAt: readAtFor(created, seededAt),
+      });
+    }
+
+    if (assigneeId) {
+      const assignedAt = addMinutes(created, 2);
+      for (const job of buildNotificationJobs(
+        { type: "TICKET_ASSIGNED", ticketId, assigneeId },
+        { ...baseContext, actor: { id: adminId, role: "ADMIN" } },
+      )) {
+        notificationRows.push({
+          ...job,
+          createdAt: assignedAt,
+          readAt: readAtFor(assignedAt, seededAt),
+        });
+      }
+    }
+
+    plannedTicket.comments.forEach((plannedComment, commentIndex) => {
+      const authorIndex =
+        plannedComment.authorKind === "staff"
+          ? plannedComment.staffIndex!
+          : plannedTicket.ownerIndex;
+      const authorId = userIds[authorIndex];
+      const role = plan.users[authorIndex].role;
+      const commentId = commentIds[ticketIndex]?.[commentIndex];
+      if (commentId === undefined || commentId === -1) return;
+
+      // A soft-deleted comment notifies nobody — the same rule the app applies,
+      // which is why `removedBy` is checked before anything is written.
+      if (plannedComment.removedBy) return;
+
+      for (const job of buildNotificationJobs(
+        { type: "NEW_COMMENT", ticketId, commentId },
+        {
+          ...baseContext,
+          actor: { id: authorId, role },
+          commentAuthor: { id: authorId, role },
+          commentDeletedAt: null,
+        },
+      )) {
+        notificationRows.push({
+          ...job,
+          createdAt: plannedComment.createdAt,
+          readAt: readAtFor(plannedComment.createdAt, seededAt),
+        });
+      }
+    });
+  });
+
+  if (notificationRows.length > 0) {
+    // `skipDuplicates` is load-bearing here, not defensive: the unique index on
+    // (userId, type, ticketId, dedupeKey) is what makes a QStash retry a no-op,
+    // and the seed asserts on the same constraint.
+    const { count } = await prisma.notification.createMany({
+      data: notificationRows,
+      skipDuplicates: true,
+    });
+    console.log(
+      `  ${notificationRows.length} notifikasi direncanakan, ${count} ditulis.`,
+    );
+  }
+
   // --- report ---------------------------------------------------------------
   const [
     totalUsers,
@@ -471,12 +604,14 @@ async function main() {
     totalComments,
     totalAttachments,
     totalCommentAttachments,
+    totalNotifications,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.ticket.count(),
     prisma.ticketComment.count(),
     prisma.ticketAttachment.count(),
     prisma.commentAttachment.count(),
+    prisma.notification.count(),
   ]);
 
   /**
@@ -516,6 +651,7 @@ const tallyGroups = <T extends { _count: number }>(
   console.log(`- Tiket       : ${totalTickets}`);
   console.log(`- Komentar    : ${totalComments}  (${removed} sudah dihapus)`);
   console.log(`- Lampiran    : ${totalAttachments} tiket, ${totalCommentAttachments} komentar`);
+  console.log(`- Notifikasi  : ${totalNotifications}`);
   console.log(`- Ter-assign  : ${assigned}`);
   console.log(`- Peran       : ${tallyGroups(byRole, (row) => row.role)}`);
   console.log(`- Status      : ${tallyGroups(byStatus, (row) => row.status)}`);

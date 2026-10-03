@@ -12,8 +12,9 @@ import {
   type AttachmentUpload,
 } from "@/lib/cloudinary";
 import { prisma } from "@/lib/prisma";
-import { publishJob } from "@/lib/qstash";
+import { publishJob, publishNotificationJob } from "@/lib/qstash";
 import { buildAssignmentNotifications } from "@/lib/assignment-notifications";
+import { buildNotificationJobs } from "@/lib/notifications";
 import { isTicketPriority } from "@/lib/priority";
 import { canDeleteUserContent } from "@/lib/delete-permissions";
 import { logEvent } from "@/utils/sentry";
@@ -166,6 +167,27 @@ export const createTicket = async (
     // Best-effort: enqueue only — the email itself is sent asynchronously by
     // /api/jobs/send-email (never blocks or fails this action).
     await publishJob({ type: "TICKET_CREATED", ticketId: ticket.id });
+
+    // In-app notifications: notify all staff (excluding the creator if staff).
+    // Published separately so a QStash outage on one pipeline never blocks
+    // the other. Recipients are computed at publish time from lib/notifications.ts.
+    const staffIds = (
+      await prisma.user.findMany({
+        where: { role: { in: STAFF_ROLES } },
+        select: { id: true },
+      })
+    ).map((u) => u.id);
+    const notificationJobs = buildNotificationJobs(
+      { type: "TICKET_CREATED", ticketId: ticket.id },
+      {
+        ticket: { id: ticket.id, userId: ticket.userId, assigneeId: null, subject: ticket.subject },
+        actor: { id: user.id, role: user.role },
+        staffIds,
+      },
+    );
+    for (const job of notificationJobs) {
+      await publishNotificationJob(job);
+    }
 
     return {
       success: true,
@@ -501,6 +523,31 @@ export const updateTicketStatus = async (
     // Best-effort: enqueue only — the status email goes out asynchronously.
     await publishJob({ type: "STATUS_UPDATED", ticketId, newStatus: status });
 
+    // In-app notifications: owner + assignee (if any), excluding the actor.
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: ticketId },
+      select: { id: true, userId: true, assigneeId: true, subject: true },
+    });
+    if (ticket) {
+      const staffIds = (
+        await prisma.user.findMany({
+          where: { role: { in: STAFF_ROLES } },
+          select: { id: true },
+        })
+      ).map((u) => u.id);
+      const notificationJobs = buildNotificationJobs(
+        { type: "STATUS_UPDATED", ticketId, newStatus: status },
+        {
+          ticket: { id: ticket.id, userId: ticket.userId, assigneeId: ticket.assigneeId, subject: ticket.subject },
+          actor: { id: user.id, role: user.role },
+          staffIds,
+        },
+      );
+      for (const job of notificationJobs) {
+        await publishNotificationJob(job);
+      }
+    }
+
     return { success: true, message: "Ticket status updated" };
   } catch (error) {
     logEvent(
@@ -621,6 +668,61 @@ export const assignTicket = async (
       nextAssigneeId,
     })) {
       await publishJob(job, { deduplicationId });
+    }
+
+    // In-app notifications: mirrors email but excludes the actor.
+    // buildAssignmentNotifications already handles no-op and self-assign,
+    // so we just map its output to notification jobs.
+    if (!unchanged) {
+      const staffIds = (
+        await prisma.user.findMany({
+          where: { role: { in: STAFF_ROLES } },
+          select: { id: true },
+        })
+      ).map((u) => u.id);
+      // Need the ticket subject for the notification content.
+      const ticketWithSubject = await prisma.ticket.findUnique({
+        where: { id: ticketId },
+        select: { subject: true, userId: true },
+      });
+      if (ticketWithSubject) {
+        if (nextAssigneeId) {
+          const jobs = buildNotificationJobs(
+            { type: "TICKET_ASSIGNED", ticketId, assigneeId: nextAssigneeId },
+            {
+              ticket: {
+                id: ticketId,
+                userId: ticketWithSubject.userId,
+                assigneeId: nextAssigneeId,
+                subject: ticketWithSubject.subject,
+              },
+              actor: { id: user.id, role: user.role },
+              staffIds,
+            },
+          );
+          for (const job of jobs) {
+            await publishNotificationJob(job);
+          }
+        }
+        if (ticket.assigneeId) {
+          const jobs = buildNotificationJobs(
+            { type: "TICKET_UNASSIGNED", ticketId, previousAssigneeId: ticket.assigneeId },
+            {
+              ticket: {
+                id: ticketId,
+                userId: ticketWithSubject.userId,
+                assigneeId: nextAssigneeId,
+                subject: ticketWithSubject.subject,
+              },
+              actor: { id: user.id, role: user.role },
+              staffIds,
+            },
+          );
+          for (const job of jobs) {
+            await publishNotificationJob(job);
+          }
+        }
+      }
     }
 
     return {
@@ -1438,6 +1540,35 @@ export const addTicketComment = async (
         ticketId,
         newStatus: "In_Progress",
       });
+    }
+
+    // In-app notifications: client reply -> assignee or all staff (if unassigned);
+    // staff reply -> owner. Excludes the actor. This diverges from email
+    // (which emails nobody on unassigned tickets) to close the "nobody gets
+    // told" gap on the in-app side.
+    const staffIds = (
+      await prisma.user.findMany({
+        where: { role: { in: STAFF_ROLES } },
+        select: { id: true },
+      })
+    ).map((u) => u.id);
+    const notificationJobs = buildNotificationJobs(
+      { type: "NEW_COMMENT", ticketId, commentId: comment.id },
+      {
+        ticket: {
+          id: ticket.id,
+          userId: ticket.userId,
+          assigneeId: ticket.assigneeId,
+          subject: ticket.subject,
+        },
+        actor: { id: user.id, role: user.role },
+        staffIds,
+        commentAuthor: { id: user.id, role: user.role },
+        commentDeletedAt: null,
+      },
+    );
+    for (const job of notificationJobs) {
+      await publishNotificationJob(job);
     }
 
     return {

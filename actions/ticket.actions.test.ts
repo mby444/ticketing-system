@@ -20,7 +20,10 @@ const { prisma } = await vi.hoisted(async () => {
   return { prisma: createPrismaMock() };
 });
 const { getCurrentUser } = vi.hoisted(() => ({ getCurrentUser: vi.fn() }));
-const { publishJob } = vi.hoisted(() => ({ publishJob: vi.fn() }));
+const { publishJob, publishNotificationJob } = vi.hoisted(() => ({
+  publishJob: vi.fn(),
+  publishNotificationJob: vi.fn(),
+}));
 const { revalidatePath } = vi.hoisted(() => ({ revalidatePath: vi.fn() }));
 const { logEvent } = vi.hoisted(() => ({ logEvent: vi.fn() }));
 const { uploadAttachment, destroyAsset, validateAttachmentFile } = vi.hoisted(() => ({
@@ -33,7 +36,7 @@ const { uploadAttachment, destroyAsset, validateAttachmentFile } = vi.hoisted(()
 
 vi.mock("@/lib/prisma", () => ({ prisma }));
 vi.mock("@/lib/current-user", () => ({ getCurrentUser }));
-vi.mock("@/lib/qstash", () => ({ publishJob }));
+vi.mock("@/lib/qstash", () => ({ publishJob, publishNotificationJob }));
 vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("@/utils/sentry", () => ({ logEvent }));
 vi.mock("@sentry/nextjs", () => ({
@@ -126,9 +129,10 @@ beforeEach(() => {
   // to resolve so a single test that forces a rejection cannot leak.
   destroyAsset.mockResolvedValue(undefined);
   getCurrentUser.mockResolvedValue(client);
-  prisma.ticket.findUnique.mockResolvedValue(makeTicket({ userId: OWNER, status: "Open" }));
+  prisma.ticket.findUnique.mockResolvedValue(makeTicket({ userId: OWNER, status: "Open", subject: "Test ticket" }));
   prisma.ticketComment.create.mockResolvedValue({ id: 900, body: "hello" });
   prisma.ticket.updateMany.mockResolvedValue({ count: 1 });
+  prisma.user.findMany.mockResolvedValue([{ id: "staff-1" }, { id: "staff-2" }]);
 });
 
 /** Asserts an action refused *and* touched nothing. */
@@ -431,6 +435,16 @@ describe("addTicketComment — authorization", () => {
 });
 
 describe("addTicketComment — side effects", () => {
+  beforeEach(() => {
+    prisma.user.findMany.mockResolvedValue([
+      { id: "staff-1" },
+      { id: "staff-2" },
+    ]);
+    prisma.ticket.findUnique.mockResolvedValue(
+      makeTicket({ userId: OWNER, status: "Open", subject: "Test ticket" }),
+    );
+  });
+
   it("creates the comment and publishes one NEW_COMMENT job for a client", async () => {
     const res = await addTicketComment(initial, commentForm());
 
@@ -457,6 +471,10 @@ describe("addTicketComment — side effects", () => {
 
   it("bumps Open -> In_Progress when staff reply, and tells the owner", async () => {
     getCurrentUser.mockResolvedValue(agent);
+    prisma.user.findMany.mockResolvedValue([{ id: "staff-1" }, { id: "staff-2" }]);
+    prisma.ticket.findUnique.mockResolvedValue(
+      makeTicket({ userId: "owner-1", status: "Open", subject: "Test ticket" }),
+    );
 
     await addTicketComment(initial, commentForm());
 
@@ -478,8 +496,9 @@ describe("addTicketComment — side effects", () => {
 
   it("does not re-bump a ticket that is already In_Progress", async () => {
     getCurrentUser.mockResolvedValue(agent);
+    prisma.user.findMany.mockResolvedValue([{ id: "staff-1" }, { id: "staff-2" }]);
     prisma.ticket.findUnique.mockResolvedValue(
-      makeTicket({ userId: "somebody-else", status: "In_Progress" }),
+      makeTicket({ userId: "somebody-else", status: "In_Progress", subject: "Test ticket" }),
     );
 
     await addTicketComment(initial, commentForm());
@@ -579,8 +598,12 @@ describe("assignTicket — notifications", () => {
 
   it("publishes one deduplicated job on a fresh assignment", async () => {
     prisma.ticket.findUnique.mockResolvedValue(
-      makeTicket({ userId: OWNER, assigneeId: null }),
+      makeTicket({ userId: OWNER, assigneeId: null, subject: "Test ticket" }),
     );
+    prisma.user.findMany.mockResolvedValue([
+      { id: "staff-1" },
+      { id: "staff-2" },
+    ]);
 
     const res = await assignTicket(initial, assignForm(AGENT));
 
@@ -593,9 +616,13 @@ describe("assignTicket — notifications", () => {
 
   it("publishes both sides on a reassignment", async () => {
     prisma.ticket.findUnique.mockResolvedValue(
-      makeTicket({ userId: OWNER, assigneeId: OTHER_AGENT }),
+      makeTicket({ userId: OWNER, assigneeId: OTHER_AGENT, subject: "Test ticket" }),
     );
     prisma.user.findUnique.mockResolvedValue({ id: AGENT, role: "SUPPORT_AGENT" });
+    prisma.user.findMany.mockResolvedValue([
+      { id: "staff-1" },
+      { id: "staff-2" },
+    ]);
 
     await assignTicket(initial, assignForm(AGENT));
 
@@ -612,8 +639,12 @@ describe("assignTicket — notifications", () => {
 
   it("publishes a TICKET_UNASSIGNED job when the select is cleared", async () => {
     prisma.ticket.findUnique.mockResolvedValue(
-      makeTicket({ userId: OWNER, assigneeId: AGENT }),
+      makeTicket({ userId: OWNER, assigneeId: AGENT, subject: "Test ticket" }),
     );
+    prisma.user.findMany.mockResolvedValue([
+      { id: "staff-1" },
+      { id: "staff-2" },
+    ]);
 
     const res = await assignTicket(initial, assignForm(""));
 
@@ -626,7 +657,7 @@ describe("assignTicket — notifications", () => {
 
   it("publishes nothing when the assignment is unchanged", async () => {
     prisma.ticket.findUnique.mockResolvedValue(
-      makeTicket({ userId: OWNER, assigneeId: AGENT }),
+      makeTicket({ userId: OWNER, assigneeId: AGENT, subject: "Test ticket" }),
     );
 
     await assignTicket(initial, assignForm(AGENT));
@@ -635,7 +666,7 @@ describe("assignTicket — notifications", () => {
 
   it("publishes nothing when an unassigned ticket is cleared again", async () => {
     prisma.ticket.findUnique.mockResolvedValue(
-      makeTicket({ userId: OWNER, assigneeId: null }),
+      makeTicket({ userId: OWNER, assigneeId: null, subject: "Test ticket" }),
     );
 
     await assignTicket(initial, assignForm(""));
@@ -644,8 +675,12 @@ describe("assignTicket — notifications", () => {
 
   it("does not branch on the outcome of the enqueue", async () => {
     prisma.ticket.findUnique.mockResolvedValue(
-      makeTicket({ userId: OWNER, assigneeId: null }),
+      makeTicket({ userId: OWNER, assigneeId: null, subject: "Test ticket" }),
     );
+    prisma.user.findMany.mockResolvedValue([
+      { id: "staff-1" },
+      { id: "staff-2" },
+    ]);
     // publishJob is best-effort by contract: it resolves even when QStash is
     // down (it swallows the failure and reports it to Sentry). The action must
     // therefore never inspect its result. The swallow itself is covered in
