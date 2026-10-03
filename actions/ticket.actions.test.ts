@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { form, makeTicket, makeUser } from "@/test-utils/factories";
+import { form, makeFile, makeTicket, makeUser } from "@/test-utils/factories";
 
 /**
  * Server-side authorization + side-effect contract for the ticket actions.
@@ -26,7 +26,9 @@ const { logEvent } = vi.hoisted(() => ({ logEvent: vi.fn() }));
 const { uploadAttachment, destroyAsset, validateAttachmentFile } = vi.hoisted(() => ({
   uploadAttachment: vi.fn(),
   destroyAsset: vi.fn(),
-  validateAttachmentFile: vi.fn(() => null),
+  // Typed as the real contract (an error message or null) rather than
+  // `() => null`, which would make mockReturnValue of an error a type error.
+  validateAttachmentFile: vi.fn<() => string | null>(() => null),
 }));
 
 vi.mock("@/lib/prisma", () => ({ prisma }));
@@ -40,6 +42,7 @@ vi.mock("@sentry/nextjs", () => ({
 }));
 vi.mock("@/lib/cloudinary", () => ({
   MAX_FILES: 5,
+  MAX_COMMENT_FILES: 5,
   MAX_FILE_SIZE: 5 * 1024 * 1024,
   validateAttachmentFile,
   uploadAttachment,
@@ -52,6 +55,7 @@ import {
   createTicket,
   deleteAttachment,
   deleteComment,
+  deleteCommentAttachment,
 } from "@/actions/ticket.actions";
 
 const OWNER = "owner-1";
@@ -88,6 +92,27 @@ const commentRow = (userId: string, deletedAt: Date | null = null) => ({
   userId,
   deletedAt,
 });
+
+/** What `uploadAttachment` resolves to, one per file. */
+const uploadResult = (fileName: string) => ({
+  fileName,
+  mimeType: "image/png",
+  size: 1024,
+  url: `https://res.cloudinary.com/demo/${fileName}`,
+  publicId: `quickticket/tickets/${fileName}`,
+  resourceType: "image",
+});
+
+/**
+ * A comment form with `count` distinct image files under the repeated
+ * `attachments` key, which is what `<input multiple>` actually submits.
+ */
+const commentFormWithFiles = (count: number, body = "see attached") => {
+  const files = Array.from({ length: count }, (_, i) =>
+    makeFile(`shot-${i}.png`, "image/png"),
+  );
+  return form({ ticketId: "1", body, attachments: files });
+};
 
 beforeEach(() => {
   // resetAllMocks, not clearAllMocks: clear only wipes call history, so any
@@ -211,6 +236,150 @@ describe("createTicket — priority validation", () => {
 
     expect(res.message).toBe("You must be logged in to create a ticket");
     expect(prisma.ticket.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("addTicketComment — attachments", () => {
+  beforeEach(() => {
+    uploadAttachment.mockImplementation(async (file: File) =>
+      uploadResult(file.name),
+    );
+  });
+
+  it("posts a comment with no files at all", async () => {
+    const res = await addTicketComment(initial, commentForm());
+
+    expect(res).toEqual({ success: true, message: "Comment posted" });
+    expect(uploadAttachment).not.toHaveBeenCalled();
+    expect(prisma.commentAttachment.createMany).not.toHaveBeenCalled();
+  });
+
+  it("writes each uploaded file against the new comment", async () => {
+    await addTicketComment(initial, commentFormWithFiles(2));
+
+    expect(prisma.commentAttachment.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          commentId: COMMENT_ID,
+          fileName: "shot-0.png",
+          publicId: "quickticket/tickets/shot-0.png",
+        }),
+        expect.objectContaining({ commentId: COMMENT_ID, fileName: "shot-1.png" }),
+      ],
+    });
+  });
+
+  it("records the uploader from the session, never from form data", async () => {
+    getCurrentUser.mockResolvedValue(agent);
+
+    await addTicketComment(initial, commentFormWithFiles(1));
+
+    expect(prisma.commentAttachment.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ uploadedById: AGENT })],
+    });
+  });
+
+  it("rejects more files than the per-comment budget", async () => {
+    const res = await addTicketComment(initial, commentFormWithFiles(6));
+
+    // The wording is asserted too, and deliberately: MAX_FILES and
+    // MAX_COMMENT_FILES are both 5 today, so the numeric limit alone cannot tell
+    // the two budgets apart. If someone pointed this check at the ticket-level
+    // constant it would keep passing while silently re-coupling the budgets; the
+    // message would then say "per ticket" and fail here. The seed-data test
+    // ("respects the per-comment budget, which is separate") covers the
+    // independence itself.
+    expect(res.message).toBe("Maximum 5 attachments per comment");
+    expect(uploadAttachment).not.toHaveBeenCalled();
+    expect(prisma.ticketComment.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects a file that fails validation, uploading nothing", async () => {
+    validateAttachmentFile.mockReturnValue("Unsupported file type");
+
+    const res = await addTicketComment(initial, commentFormWithFiles(1));
+
+    expect(res.message).toBe("Unsupported file type");
+    expect(uploadAttachment).not.toHaveBeenCalled();
+    expect(prisma.ticketComment.create).not.toHaveBeenCalled();
+  });
+
+  it("sweeps already-uploaded assets when a later upload fails", async () => {
+    // All-or-nothing: a partial comment would show a body promising files that
+    // are not there.
+    uploadAttachment
+      .mockResolvedValueOnce(uploadResult("shot-0.png") as never)
+      .mockRejectedValueOnce(new Error("Cloudinary down"));
+
+    const res = await addTicketComment(initial, commentFormWithFiles(2));
+
+    expect(res.success).toBe(false);
+    expect(destroyAsset).toHaveBeenCalledExactlyOnceWith(
+      "quickticket/tickets/shot-0.png",
+      "image",
+    );
+    expect(prisma.ticketComment.create).not.toHaveBeenCalled();
+  });
+
+  it("sweeps the uploaded assets when the transaction fails", async () => {
+    prisma.ticketComment.create.mockRejectedValue(new Error("db down"));
+
+    const res = await addTicketComment(initial, commentFormWithFiles(2));
+
+    expect(res.message).toBe("Failed to post your comment");
+    expect(destroyAsset).toHaveBeenCalledTimes(2);
+  });
+
+  it("still requires a body when files are attached", async () => {
+    // The NEW_COMMENT worker renders comment.body into the email template, so an
+    // attachment-only comment would mail a blank quote block.
+    const res = await addTicketComment(
+      initial,
+      form({
+        ticketId: "1",
+        body: "   ",
+        attachments: [makeFile("shot-0.png", "image/png")],
+      }),
+    );
+
+    expect(res.message).toBe("Comment cannot be empty");
+    expect(uploadAttachment).not.toHaveBeenCalled();
+  });
+
+  it("never puts a file name in Sentry", async () => {
+    await addTicketComment(initial, commentFormWithFiles(1, "my secret text"));
+
+    const logged = logEvent.mock.calls.flatMap(([, , data]) => [data ?? {}]);
+    expect(JSON.stringify(logged)).not.toContain("shot-0.png");
+    expect(JSON.stringify(logged)).not.toContain("my secret text");
+  });
+
+  it("rejects a Closed ticket before uploading anything", async () => {
+    prisma.ticket.findUnique.mockResolvedValue(
+      makeTicket({ userId: OWNER, status: "Closed" }),
+    );
+
+    const res = await addTicketComment(initial, commentFormWithFiles(2));
+
+    expect(res.success).toBe(false);
+    expect(uploadAttachment).not.toHaveBeenCalled();
+  });
+
+  it("denies a foreign ticket before uploading anything", async () => {
+    prisma.ticket.findUnique.mockResolvedValue(
+      makeTicket({ userId: "somebody-else", status: "Open" }),
+    );
+
+    const res = await addTicketComment(initial, commentFormWithFiles(2));
+
+    expect(res.success).toBe(false);
+    expect(uploadAttachment).not.toHaveBeenCalled();
+  });
+
+  it("reports the attachment count on success", async () => {
+    const res = await addTicketComment(initial, commentFormWithFiles(1));
+
+    expect(res.message).toBe("Comment posted with 1 attachment");
   });
 });
 
@@ -742,5 +911,183 @@ describe("deleteComment", () => {
 
     expect(revalidatePath).toHaveBeenCalledWith("/tickets");
     expect(revalidatePath).toHaveBeenCalledWith("/tickets/[id]", "page");
+  });
+});
+
+describe("deleteCommentAttachment", () => {
+  const CATT_ID = "catt-1";
+
+  const attachForm = (id: string) =>
+    form({ attachmentId: id });
+
+  /** A row the delete action can read: ownership is the whole permission story. */
+  const commentAttachmentRow = (uploadedById: string) => ({
+    id: CATT_ID,
+    commentId: COMMENT_ID,
+    fileName: "shot.png",
+    publicId: "quickticket/tickets/abc",
+    resourceType: "image",
+    uploadedById,
+  });
+
+  beforeEach(() => {
+    prisma.commentAttachment.findUnique.mockResolvedValue(
+      commentAttachmentRow(OWNER) as never,
+    );
+    prisma.commentAttachment.delete.mockResolvedValue({} as never);
+    prisma.ticketComment.findUnique.mockResolvedValue({
+      id: COMMENT_ID,
+      ticketId: 1,
+      deletedAt: null,
+    } as never);
+    prisma.ticket.findUnique.mockResolvedValue(
+      makeTicket({ userId: OWNER, status: "Open" }) as never,
+    );
+  });
+
+  it("destroys nothing when the delete itself failed", async () => {
+    // Guards the ordering invariant from the other end: the asset sweep must be
+    // gated behind a delete that actually happened.
+    prisma.commentAttachment.delete.mockRejectedValue(new Error("db down"));
+
+    const res = await deleteCommentAttachment(initial, attachForm(CATT_ID));
+
+    expect(res.success).toBe(false);
+    expect(destroyAsset).not.toHaveBeenCalled();
+  });
+
+  it("requires a session", async () => {
+    getCurrentUser.mockResolvedValue(null);
+
+    const res = await deleteCommentAttachment(initial, attachForm(CATT_ID));
+    expect(res.message).toBe("You must be logged in");
+    expect(prisma.commentAttachment.delete).not.toHaveBeenCalled();
+  });
+
+  it("requires an attachment id", async () => {
+    const res = await deleteCommentAttachment(initial, new FormData());
+    expect(res.message).toBe("Attachment ID is required");
+  });
+
+  it("reports a missing attachment", async () => {
+    prisma.commentAttachment.findUnique.mockResolvedValue(null);
+
+    const res = await deleteCommentAttachment(initial, attachForm(CATT_ID));
+    expect(res.message).toBe("Attachment not found");
+    expect(prisma.commentAttachment.delete).not.toHaveBeenCalled();
+  });
+
+  it("reports a missing parent comment", async () => {
+    prisma.ticketComment.findUnique.mockResolvedValue(null);
+
+    const res = await deleteCommentAttachment(initial, attachForm(CATT_ID));
+    expect(res.message).toBe("Attachment not found");
+    expect(prisma.commentAttachment.delete).not.toHaveBeenCalled();
+  });
+
+  it("lets the uploader delete their own file", async () => {
+    const res = await deleteCommentAttachment(initial, attachForm(CATT_ID));
+
+    expect(res).toEqual({ success: true, message: "Attachment deleted" });
+    expect(prisma.commentAttachment.delete).toHaveBeenCalledWith({
+      where: { id: CATT_ID },
+    });
+  });
+
+  it("denies a client deleting a file support uploaded", async () => {
+    prisma.commentAttachment.findUnique.mockResolvedValue(
+      commentAttachmentRow(AGENT) as never,
+    );
+
+    const res = await deleteCommentAttachment(initial, attachForm(CATT_ID));
+
+    expect(res.message).toBe("You are not allowed to delete this attachment");
+    expect(prisma.commentAttachment.delete).not.toHaveBeenCalled();
+    expect(destroyAsset).not.toHaveBeenCalled();
+  });
+
+  it("lets staff delete anybody's file", async () => {
+    getCurrentUser.mockResolvedValue(agent);
+
+    const res = await deleteCommentAttachment(initial, attachForm(CATT_ID));
+
+    expect(res.success).toBe(true);
+    expect(prisma.commentAttachment.delete).toHaveBeenCalledOnce();
+  });
+
+  it("denies an uploader who can no longer reach the ticket", async () => {
+    // Demoted staff: still the author, but canAccessTicket now fails.
+    getCurrentUser.mockResolvedValue(makeUser({ id: AGENT, role: "CLIENT" }));
+    prisma.commentAttachment.findUnique.mockResolvedValue(
+      commentAttachmentRow(AGENT) as never,
+    );
+
+    const res = await deleteCommentAttachment(initial, attachForm(CATT_ID));
+
+    expect(res.success).toBe(false);
+    expect(prisma.commentAttachment.delete).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the comment was already removed", async () => {
+    // The rows are kept on soft delete so the thread has no hole, and the files
+    // are withheld. Without this guard they would still be deletable through the
+    // action while being unreachable from the UI.
+    getCurrentUser.mockResolvedValue(agent);
+    prisma.ticketComment.findUnique.mockResolvedValue({
+      id: COMMENT_ID,
+      ticketId: 1,
+      deletedAt: new Date(),
+    } as never);
+
+    const res = await deleteCommentAttachment(initial, attachForm(CATT_ID));
+
+    expect(res.success).toBe(false);
+    expect(res.message).toContain("no longer be deleted");
+    expect(prisma.commentAttachment.delete).not.toHaveBeenCalled();
+    expect(destroyAsset).not.toHaveBeenCalled();
+  });
+
+  it("destroys the Cloudinary asset with the right arguments", async () => {
+    await deleteCommentAttachment(initial, attachForm(CATT_ID));
+
+    expect(destroyAsset).toHaveBeenCalledWith(
+      "quickticket/tickets/abc",
+      "image",
+    );
+  });
+
+  it("deletes the row BEFORE destroying the asset", async () => {
+    // The reverse order can leave a row pointing at a file that no longer
+    // exists, which breaks the thumbnail visibly.
+    await deleteCommentAttachment(initial, attachForm(CATT_ID));
+
+    const deleteOrder = prisma.commentAttachment.delete.mock
+      .invocationCallOrder[0];
+    const destroyOrder = destroyAsset.mock.invocationCallOrder[0];
+    expect(deleteOrder).toBeLessThan(destroyOrder);
+  });
+
+  it("still reports success when the asset destroy throws", async () => {
+    destroyAsset.mockRejectedValue(new Error("Cloudinary down"));
+
+    await expect(
+      deleteCommentAttachment(initial, attachForm(CATT_ID)),
+    ).resolves.toEqual({ success: true, message: "Attachment deleted" });
+  });
+
+  it("revalidates the list and the detail page", async () => {
+    await deleteCommentAttachment(initial, attachForm(CATT_ID));
+
+    expect(revalidatePath).toHaveBeenCalledWith("/tickets");
+    expect(revalidatePath).toHaveBeenCalledWith("/tickets/[id]", "page");
+  });
+
+  it("does not touch the ticket attachment table", async () => {
+    // The two tables have independent lifecycles; a comment file must never be
+    // removed through the ticket-level delegate.
+    await deleteCommentAttachment(initial, attachForm(CATT_ID));
+
+    expect(prisma.ticketAttachment.delete).not.toHaveBeenCalled();
+    expect(prisma.ticketComment.delete).not.toHaveBeenCalled();
   });
 });

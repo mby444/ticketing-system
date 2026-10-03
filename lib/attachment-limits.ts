@@ -25,3 +25,15 @@ export const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 /** Max attachments per ticket (bounds the request body to ~30MB, see next.config.ts). */
 export const MAX_FILES = 5;
+
+/**
+ * Max attachments per comment.
+ *
+ * Deliberately a separate budget from `MAX_FILES` rather than a share of it: a
+ * comment lives in its own table (`CommentAttachment`), so a long thread cannot
+ * exhaust the ticket's allowance, and a customer replying with a screenshot is
+ * never blocked because support already put three files on the ticket. The
+ * per-request ceiling is unchanged — 5 files x 5MB still fits the 30MB
+ * bodySizeLimit.
+ */
+export const MAX_COMMENT_FILES = 5;

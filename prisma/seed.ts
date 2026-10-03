@@ -80,41 +80,19 @@ type SeedAttachmentRow = {
   uploadedById: string;
 };
 
+type SeedCommentAttachmentRow = Omit<SeedAttachmentRow, "ticketId"> & {
+  commentId: number;
+};
+
 /**
- * Uploads every planned attachment and returns rows ready for `createMany`.
- * Returns null when attachments are unavailable, which is not an error: seeding
- * without them still produces a usable database.
+ * Deletes every asset the previous seed run left behind in SEED_ATTACHMENTS_FOLDER.
+ *
+ * A database wipe orphans those assets: the rows are gone, so nothing can ever
+ * call destroyAsset on them again. Sweeping by prefix is what keeps a re-seed
+ * from leaking assets on every run. Only the seed folder is touched.
  */
-const uploadPlannedAttachments = async (
-  plan: SeedPlan,
-  ticketIds: number[],
-  userIds: string[],
-): Promise<SeedAttachmentRow[] | null> => {
-  const planned = plan.tickets.flatMap((ticket, ticketIndex) =>
-    ticket.attachments.map((attachment) => ({
-      attachment,
-      ticketId: ticketIds[ticketIndex],
-      uploaderId:
-        attachment.uploaderKind === "staff"
-          ? userIds[attachment.staffIndex!]
-          : userIds[ticket.ownerIndex],
-    })),
-  );
-  if (planned.length === 0) return [];
-
-  if (!cloudinaryConfigured()) {
-    console.warn(
-      "  ! Cloudinary tidak dikonfigurasi, lampiran dilewati. Isi CLOUDINARY_* atau set SEED_NO_ATTACHMENTS=1.",
-    );
-    return null;
-  }
-
+const sweepSeedFolder = async (): Promise<void> => {
   try {
-    // Previous runs uploaded real assets that the database wipe is about to make
-    // unreachable: the rows are gone, so nothing can ever call destroyAsset on
-    // them again. Clearing the folder by prefix is what keeps a re-seed from
-    // leaking assets on every run. Only the seed folder is touched.
-    //
     // BOTH resource types are swept, because PDFs are stored as `raw`. Note the
     // option names: `type` is the delivery type and is always "upload";
     // `resource_type` is what makes the SDK request /resources/raw instead of
@@ -138,6 +116,65 @@ const uploadPlannedAttachments = async (
       error instanceof Error ? error.message : JSON.stringify(error).slice(0, 200);
     console.warn(`  ! Gagal membersihkan folder seed di Cloudinary: ${detail}`);
   }
+};
+
+/**
+ * Uploads every planned attachment and returns rows ready for `createMany`.
+ * Returns null when attachments are unavailable, which is not an error: seeding
+ * without them still produces a usable database.
+ *
+ * Both kinds of file — ticket-level and comment-level — go through this one
+ * function because they differ only in which table the row lands in. They share
+ * the seed folder, so they also share the prefix sweep above.
+ */
+const uploadPlannedAttachments = async (
+  plan: SeedPlan,
+  ticketIds: number[],
+  commentIds: number[][],
+  userIds: string[],
+): Promise<{
+  ticketRows: SeedAttachmentRow[];
+  commentRows: SeedCommentAttachmentRow[];
+} | null> => {
+  const plannedTickets = plan.tickets.flatMap((ticket, ticketIndex) =>
+    ticket.attachments.map((attachment) => ({
+      attachment,
+      ticketId: ticketIds[ticketIndex],
+      uploaderId:
+        attachment.uploaderKind === "staff"
+          ? userIds[attachment.staffIndex!]
+          : userIds[ticket.ownerIndex],
+    })),
+  );
+
+  const plannedComments = plan.tickets.flatMap((ticket, ticketIndex) =>
+    ticket.comments.flatMap((comment, commentIndex) =>
+      comment.attachments.map((attachment) => {
+        const authorIndex =
+          comment.authorKind === "staff" ? comment.staffIndex! : ticket.ownerIndex;
+        return {
+          attachment,
+          commentId: commentIds[ticketIndex]?.[commentIndex],
+          // The uploader is always the comment's own author — see
+          // PlannedComment.attachments.
+          uploaderId: userIds[authorIndex],
+        };
+      }),
+    ),
+  );
+
+  if (plannedTickets.length === 0 && plannedComments.length === 0) {
+    return { ticketRows: [], commentRows: [] };
+  }
+
+  if (!cloudinaryConfigured()) {
+    console.warn(
+      "  ! Cloudinary tidak dikonfigurasi, lampiran dilewati. Isi CLOUDINARY_* atau set SEED_NO_ATTACHMENTS=1.",
+    );
+    return null;
+  }
+
+  await sweepSeedFolder();
 
   /**
  * Uploads one buffer and resolves with the persisted row fields.
@@ -153,41 +190,49 @@ const uploadOne = (
   bytes: Buffer,
   options: Record<string, unknown>,
   attachment: { fileName: string; mimeType: string },
-  ticketId: number,
+  // `ticketId` or `commentId`, decided by the caller.
+  ownerIdField: Record<string, number>,
   uploaderId: string,
   resourceType: string,
-): Promise<SeedAttachmentRow> =>
+): Promise<Omit<SeedAttachmentRow, "ticketId">> =>
   new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(options, (error, response) => {
-      if (error || !response) {
-        reject(error ?? new Error("Cloudinary returned an empty response"));
-        return;
-      }
-      resolve({
-        fileName: attachment.fileName,
-        mimeType: attachment.mimeType,
-        size: bytes.length,
-        url: response.secure_url,
-        publicId: response.public_id,
-        resourceType,
-        ticketId,
-        uploadedById: uploaderId,
-      });
-    });
+    const stream = cloudinary.uploader.upload_stream(
+      options,
+      (error, response) => {
+        if (error || !response) {
+          reject(error ?? new Error("Cloudinary returned an empty response"));
+          return;
+        }
+        resolve({
+          fileName: attachment.fileName,
+          mimeType: attachment.mimeType,
+          size: bytes.length,
+          url: response.secure_url,
+          publicId: response.public_id,
+          resourceType,
+          uploadedById: uploaderId,
+          ...ownerIdField,
+        });
+      },
+    );
     stream.end(bytes);
   });
 
-const rows: SeedAttachmentRow[] = [];
+  const ticketRows: SeedAttachmentRow[] = [];
+  const commentRows: SeedCommentAttachmentRow[] = [];
 
+  // One ordinal across both kinds, so generated PNGs get distinct colours and a
+  // comment file is never a byte-identical copy of a ticket file.
   let ordinal = 0;
-  for (const { attachment, ticketId, uploaderId } of planned) {
+
+  for (const { attachment, ticketId, uploaderId } of plannedTickets) {
     const isPdf = attachment.mimeType === "application/pdf";
     const resourceType = isPdf ? "raw" : "image";
     const bytes = bytesFor(attachment.mimeType, attachment.fileName, ordinal++);
 
     try {
-      rows.push(
-        await uploadOne(
+      ticketRows.push(
+        (await uploadOne(
           bytes,
           {
             folder: SEED_ATTACHMENTS_FOLDER,
@@ -195,10 +240,10 @@ const rows: SeedAttachmentRow[] = [];
             overwrite: false,
           },
           attachment,
-          ticketId,
+          { ticketId },
           uploaderId,
           resourceType,
-        ),
+        )) as SeedAttachmentRow,
       );
     } catch (error) {
       // Non-fatal on purpose: a seed without attachments is still usable, and a
@@ -211,7 +256,45 @@ const rows: SeedAttachmentRow[] = [];
     }
   }
 
-  return rows;
+  for (const { attachment, commentId, uploaderId } of plannedComments) {
+    if (commentId === undefined) {
+      // The planner only attaches files to comments that survive into the
+      // database, so a missing id means the id map is out of step. Throwing
+      // beats silently dropping the file or attaching it to the wrong comment.
+      throw new Error(
+        `Seed comment attachment ${attachment.fileName} has no comment id`,
+      );
+    }
+
+    const isPdf = attachment.mimeType === "application/pdf";
+    const resourceType = isPdf ? "raw" : "image";
+    const bytes = bytesFor(attachment.mimeType, attachment.fileName, ordinal++);
+
+    try {
+      commentRows.push(
+        (await uploadOne(
+          bytes,
+          {
+            folder: SEED_ATTACHMENTS_FOLDER,
+            resource_type: resourceType,
+            overwrite: false,
+          },
+          attachment,
+          { commentId },
+          uploaderId,
+          resourceType,
+        )) as SeedCommentAttachmentRow,
+      );
+    } catch (error) {
+      console.warn(
+        `  ! Unggahan lampiran komentar ${attachment.fileName} gagal, dilewati: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  return { ticketRows, commentRows };
 };
 
 // ---------------------------------------------------------------------------
@@ -228,6 +311,7 @@ async function main() {
     ticketsPerUser: ticketsPerUserFromEnv(),
     staffCount: intFromEnv("SEED_STAFF", 4),
     attachmentTicketRatio: attachmentsRequested ? undefined : 0,
+    commentAttachmentRatio: attachmentsRequested ? undefined : 0,
   });
 
   console.log("Membersihkan database...");
@@ -328,26 +412,72 @@ async function main() {
     }),
   );
 
+  // Comments come back with their ids because comment attachments need a
+  // commentId to attach to.
+  //
+  // The returned rows are matched back to the plan by (ticketId, createdAt)
+  // rather than by position. Position would work — Postgres returns VALUES in
+  // insert order — but it is an assumption about the driver, and getting it
+  // wrong silently attaches a screenshot to the wrong message. The pair is safe
+  // to key on because the planner guarantees each thread is strictly ordered by
+  // createdAt, so no two comments on a ticket share one.
+  let createdComments: { id: number; ticketId: number; createdAt: Date }[] = [];
   if (commentRows.length > 0) {
-    await prisma.ticketComment.createMany({ data: commentRows });
+    createdComments = await prisma.ticketComment.createManyAndReturn({
+      data: commentRows,
+      select: { id: true, ticketId: true, createdAt: true },
+    });
   }
+
+  const idByTicketAndTime = new Map<string, number>();
+  for (const comment of createdComments) {
+    idByTicketAndTime.set(
+      `${comment.ticketId}:${comment.createdAt.getTime()}`,
+      comment.id,
+    );
+  }
+
+  const commentIds: number[][] = plan.tickets.map((ticket, ticketIndex) =>
+    ticket.comments.map(
+      (comment) =>
+        idByTicketAndTime.get(
+          `${ticketIds[ticketIndex]}:${comment.createdAt.getTime()}`,
+        ) ?? -1,
+    ),
+  );
 
   if (attachmentsRequested) {
     console.log(`Mengunggah lampiran ke Cloudinary...`);
-    const rows = await uploadPlannedAttachments(plan, ticketIds, userIds);
-    if (rows && rows.length > 0) {
-      await prisma.ticketAttachment.createMany({ data: rows });
+    const rows = await uploadPlannedAttachments(
+      plan,
+      ticketIds,
+      commentIds,
+      userIds,
+    );
+    if (rows) {
+      if (rows.ticketRows.length > 0) {
+        await prisma.ticketAttachment.createMany({ data: rows.ticketRows });
+      }
+      if (rows.commentRows.length > 0) {
+        await prisma.commentAttachment.createMany({ data: rows.commentRows });
+      }
     }
   }
 
   // --- report ---------------------------------------------------------------
-  const [totalUsers, totalTickets, totalComments, totalAttachments] =
-    await Promise.all([
-      prisma.user.count(),
-      prisma.ticket.count(),
-      prisma.ticketComment.count(),
-      prisma.ticketAttachment.count(),
-    ]);
+  const [
+    totalUsers,
+    totalTickets,
+    totalComments,
+    totalAttachments,
+    totalCommentAttachments,
+  ] = await Promise.all([
+    prisma.user.count(),
+    prisma.ticket.count(),
+    prisma.ticketComment.count(),
+    prisma.ticketAttachment.count(),
+    prisma.commentAttachment.count(),
+  ]);
 
   /**
  * Renders `groupBy` rows as `key=count`.
@@ -385,7 +515,7 @@ const tallyGroups = <T extends { _count: number }>(
   console.log(`- User        : ${totalUsers}`);
   console.log(`- Tiket       : ${totalTickets}`);
   console.log(`- Komentar    : ${totalComments}  (${removed} sudah dihapus)`);
-  console.log(`- Lampiran    : ${totalAttachments}`);
+  console.log(`- Lampiran    : ${totalAttachments} tiket, ${totalCommentAttachments} komentar`);
   console.log(`- Ter-assign  : ${assigned}`);
   console.log(`- Peran       : ${tallyGroups(byRole, (row) => row.role)}`);
   console.log(`- Status      : ${tallyGroups(byStatus, (row) => row.status)}`);

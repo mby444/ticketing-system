@@ -1,6 +1,7 @@
 import type { Role, TicketPriority, TicketStatus } from "@/generated/prisma/client";
 import {
   ALLOWED_MIME_TYPES,
+  MAX_COMMENT_FILES,
   MAX_FILES,
 } from "@/lib/attachment-limits";
 
@@ -357,6 +358,24 @@ export type PlannedComment = {
   createdAt: Date;
   /** Only set when the row should be seeded already removed. */
   removedBy?: RemovedBy;
+  /**
+   * Files attached to this comment.
+   *
+   * The uploader is always the comment's own author — a customer attaching to
+   * their message, staff attaching to their reply. That is both what the UI
+   * naturally produces and the state `deleteCommentAttachment`'s author-or-staff
+   * rule is actually exercised by.
+   *
+   * Deliberately never planned for a comment that will be seeded already
+   * removed: those rows are hidden in the thread, so their files would be
+   * unreachable and the feature would look untested.
+   */
+  attachments: PlannedCommentAttachment[];
+};
+
+export type PlannedCommentAttachment = {
+  fileName: string;
+  mimeType: SeedMimeType;
 };
 
 export type PlannedAttachment = {
@@ -407,6 +426,8 @@ export type BuildPlanOptions = {
   softDeletedComments?: number;
   /** Fraction of tickets that get attachments. */
   attachmentTicketRatio?: number;
+  /** Fraction of comments that get attachments. */
+  commentAttachmentRatio?: number;
 };
 
 export const DEFAULT_USER_COUNT = 30;
@@ -414,6 +435,7 @@ export const DEFAULT_TICKETS_PER_USER: readonly [number, number] = [1, 8];
 export const DEFAULT_STAFF_COUNT = 4;
 export const DEFAULT_SOFT_DELETED_COMMENTS = 3;
 export const DEFAULT_ATTACHMENT_TICKET_RATIO = 0.35;
+export const DEFAULT_COMMENT_ATTACHMENT_RATIO = 0.3;
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -448,6 +470,7 @@ export const buildSeedPlan = (options: BuildPlanOptions = {}): SeedPlan => {
     staffCount = DEFAULT_STAFF_COUNT,
     softDeletedComments = DEFAULT_SOFT_DELETED_COMMENTS,
     attachmentTicketRatio = DEFAULT_ATTACHMENT_TICKET_RATIO,
+    commentAttachmentRatio = DEFAULT_COMMENT_ATTACHMENT_RATIO,
   } = options;
 
   if (userCount < staffCount) {
@@ -478,6 +501,9 @@ export const buildSeedPlan = (options: BuildPlanOptions = {}): SeedPlan => {
 
   const tickets: PlannedTicket[] = [];
   const removalCandidates: { ticketIndex: number; commentIndex: number }[] = [];
+  // One counter for BOTH kinds of file, so a comment attachment can never
+  // collide with a ticket attachment's name. The seed-data test asserts
+  // global uniqueness.
   let attachmentCounter = 0;
 
   for (let ownerIndex = 0; ownerIndex < userCount; ownerIndex++) {
@@ -534,11 +560,32 @@ export const buildSeedPlan = (options: BuildPlanOptions = {}): SeedPlan => {
 
       const comments: PlannedComment[] = bodies.map((body, index) => {
         const authorKind: "client" | "staff" = index === 0 ? "client" : "staff";
+
+        // Comment attachments. Sampled per comment rather than per thread: the
+        // budget is per comment in the app too (MAX_COMMENT_FILES), so a long
+        // thread does not run out. Shares `attachmentCounter` with the ticket
+        // files below for globally unique names.
+        const attachments: PlannedCommentAttachment[] = [];
+        if (commentAttachmentRatio > 0 && rng.chance(commentAttachmentRatio)) {
+          const count = rng.int(1, Math.min(2, MAX_COMMENT_FILES));
+          for (let c = 0; c < count; c++) {
+            attachmentCounter++;
+            const kind = rng.chance(0.25)
+              ? { mimeType: "application/pdf" as const, extension: "pdf" }
+              : rng.pick(IMAGE_KINDS);
+            attachments.push({
+              fileName: `lampiran-${attachmentCounter}.${kind.extension}`,
+              mimeType: kind.mimeType,
+            });
+          }
+        }
+
         return {
           body,
           authorKind,
           staffIndex: authorKind === "staff" ? rng.pick(staff) : undefined,
           createdAt: new Date(windowStart + fractions[index] * span),
+          attachments,
         };
       });
 
@@ -615,7 +662,15 @@ export const buildSeedPlan = (options: BuildPlanOptions = {}): SeedPlan => {
     });
     if (!candidate) return;
     used.add(`${candidate.ticketIndex}:${candidate.commentIndex}`);
-    tickets[candidate.ticketIndex].comments[candidate.commentIndex].removedBy = mode;
+    const comment = tickets[candidate.ticketIndex].comments[candidate.commentIndex];
+    comment.removedBy = mode;
+    // A removed comment hides its files in the thread (a soft delete retracts the
+    // whole message, screenshots included), and deleteCommentAttachment refuses
+    // to touch them. Seeding one would produce rows nothing can reach, so the
+    // removal is also the point at which any planned files are dropped. This
+    // runs after every candidate is known, so a comment chosen for removal never
+    // keeps its attachments regardless of which path selected it.
+    comment.attachments = [];
     budget--;
   };
 

@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { canAccessTicket, isStaff, STAFF_ROLES } from "@/lib/authorization";
 import { TicketStatus } from "@/generated/prisma/client";
 import {
+  MAX_COMMENT_FILES,
   MAX_FILES,
   validateAttachmentFile,
   uploadAttachment,
@@ -261,6 +262,18 @@ export const getTicketById = async (id: number) => {
             // them as "[removed]" so a two-way conversation never has a hole.
             deletedBy: {
               select: { id: true, name: true, email: true },
+            },
+            // Files on the comment, same uploader trace as ticket attachments.
+            // Also returned for a removed comment (the rows are kept), but the
+            // thread deliberately does not render them — a soft delete freezes
+            // the whole message.
+            attachments: {
+              orderBy: { createdAt: "asc" },
+              include: {
+                uploadedBy: {
+                  select: { id: true, name: true, email: true, role: true },
+                },
+              },
             },
           },
         },
@@ -1028,6 +1041,179 @@ export const deleteComment = async (
 };
 
 /**
+ * Hard-deletes one file attached to a comment and destroys its Cloudinary asset.
+ *
+ * Deliberately a sibling of `deleteAttachment` rather than a shared helper: the
+ * two tables have independent budgets and independent lifecycles, and comment
+ * files carry one extra rule the ticket-level action does not — a soft-deleted
+ * comment freezes its whole thread, files included.
+ *
+ * The row is deleted BEFORE the asset for the same reason as in
+ * `deleteAttachment`: the reverse order can leave a row pointing at a file that
+ * no longer exists, which breaks the thumbnail visibly. This way a failed
+ * destroy leaves only an orphaned asset, invisible to users and already reported
+ * to Sentry by destroyAsset's own best-effort contract.
+ */
+export const deleteCommentAttachment = async (
+  prevState: ActionState,
+  formData: FormData,
+) => {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      logEvent(
+        "Unauthorized comment attachment delete attempt",
+        "ticket",
+        {},
+        "warning",
+      );
+      return { success: false, message: "You must be logged in" };
+    }
+
+    const attachmentId = String(formData.get("attachmentId") ?? "");
+    if (!attachmentId) {
+      logEvent(
+        "Validation error: Missing comment attachment ID",
+        "ticket",
+        {},
+        "warning",
+      );
+      return { success: false, message: "Attachment ID is required" };
+    }
+
+    const attachment = await prisma.commentAttachment.findUnique({
+      where: { id: attachmentId },
+    });
+    if (!attachment) {
+      logEvent(
+        "Comment attachment delete: not found",
+        "ticket",
+        { attachmentId },
+        "warning",
+      );
+      return { success: false, message: "Attachment not found" };
+    }
+
+    const comment = await prisma.ticketComment.findUnique({
+      where: { id: attachment.commentId },
+      select: { ticketId: true, deletedAt: true },
+    });
+    if (!comment) {
+      logEvent(
+        "Comment attachment delete: parent comment is gone",
+        "ticket",
+        { attachmentId, commentId: attachment.commentId },
+        "warning",
+      );
+      return { success: false, message: "Attachment not found" };
+    }
+
+    const ticket = await prisma.ticket.findUnique({
+      where: { id: comment.ticketId },
+      select: { userId: true },
+    });
+
+    // Belt and braces: being the uploader does not by itself prove you can still
+    // reach the ticket — a staff member who was later demoted is still the
+    // author but no longer passes canAccessTicket.
+    if (!ticket || !canAccessTicket(user, ticket)) {
+      logEvent(
+        "Unauthorized comment attachment delete attempt",
+        "ticket",
+        {
+          attachmentId,
+          commentId: attachment.commentId,
+          ticketId: comment.ticketId,
+          userId: user.id,
+        },
+        "warning",
+      );
+      return {
+        success: false,
+        message: "You are not allowed to delete this attachment",
+      };
+    }
+
+    if (comment.deletedAt) {
+      // The rows are deliberately kept when a comment is soft-deleted so the
+      // thread never shows a hole. This guard makes the freeze real: without it,
+      // files on a removed comment would still be deletable here even though no
+      // control for them is ever rendered.
+      logEvent(
+        "Comment attachment delete rejected: comment already removed",
+        "ticket",
+        { attachmentId, commentId: attachment.commentId, userId: user.id },
+        "warning",
+      );
+      return {
+        success: false,
+        message:
+          "This comment was removed — its attachments can no longer be deleted",
+      };
+    }
+
+    if (!canDeleteUserContent(user, attachment.uploadedById)) {
+      logEvent(
+        "Comment attachment delete rejected: not the uploader and not staff",
+        "ticket",
+        { attachmentId, commentId: attachment.commentId, userId: user.id },
+        "warning",
+      );
+      return {
+        success: false,
+        message: "You are not allowed to delete this attachment",
+      };
+    }
+
+    await prisma.commentAttachment.delete({ where: { id: attachmentId } });
+
+    // The row is gone by now, so reporting a failure would be a lie. The
+    // try/catch locks that invariant even if destroyAsset ever stops swallowing.
+    try {
+      await destroyAsset(attachment.publicId, attachment.resourceType);
+    } catch (error) {
+      logEvent(
+        "Cloudinary asset destroy threw after the row was deleted",
+        "ticket",
+        { attachmentId, publicId: attachment.publicId },
+        "error",
+        error,
+      );
+    }
+
+    logEvent(
+      `Comment attachment ${attachmentId} deleted from comment ${attachment.commentId}`,
+      "ticket",
+      {
+        ticketId: comment.ticketId,
+        commentId: attachment.commentId,
+        attachmentId,
+        fileName: attachment.fileName,
+        uploadedById: attachment.uploadedById,
+        deletedBy: user.id,
+        deletedByRole: user.role,
+        deletedByIsAuthor: user.id === attachment.uploadedById,
+      },
+      "info",
+    );
+
+    revalidatePath("/tickets");
+    revalidatePath("/tickets/[id]", "page");
+
+    return { success: true, message: "Attachment deleted" };
+  } catch (error) {
+    logEvent(
+      "Failed to delete comment attachment",
+      "ticket",
+      { attachmentId: formData.get("attachmentId") },
+      "error",
+      error,
+    );
+    return { success: false, message: "Failed to delete attachment" };
+  }
+};
+
+/**
  * Maximum comment length. Kept in sync with the `maxLength` attribute of the
  * comment textarea — the check in the action below is the authoritative one.
  */
@@ -1042,6 +1228,17 @@ const MAX_COMMENT_LENGTH = 5000;
  *
  * Smart workflow: a staff reply to an Open ticket also moves it to In_Progress,
  * atomically with the insert, since a reply means work has actually started.
+ *
+ * Attachments are optional and all-or-nothing, in the same shape as
+ * `createTicket`: validate, upload, then one transaction that writes the
+ * comment, its files and the status bump together. Files land in
+ * `CommentAttachment`, which has its own budget (`MAX_COMMENT_FILES`) and its own
+ * delete path (`deleteCommentAttachment`) — deliberately independent of the
+ * ticket-level allowance, so a long thread can never exhaust it.
+ *
+ * The body stays mandatory even when files are attached. The NEW_COMMENT worker
+ * renders `comment.body` into the notification email, so an attachment-only
+ * comment would send a blank quote block to the other party.
  */
 export const addTicketComment = async (
   prevState: ActionState,
@@ -1113,12 +1310,80 @@ export const addTicketComment = async (
     // their own ticket into In_Progress.
     const bumpToInProgress = isStaff(user) && ticket.status === "Open";
 
+    // Files are optional. The body is still required, so this can never be an
+    // attachment-only comment — see the note in emails/new-comment.tsx about
+    // why that matters to the notification email.
+    const files = formData
+      .getAll("attachments")
+      .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+
+    if (files.length > MAX_COMMENT_FILES) {
+      logEvent(
+        "Comment rejected: too many attachments",
+        "ticket",
+        { ticketId, count: files.length, max: MAX_COMMENT_FILES },
+        "warning",
+      );
+      return {
+        success: false,
+        message: `Maximum ${MAX_COMMENT_FILES} attachments per comment`,
+      };
+    }
+
+    for (const file of files) {
+      const validationError = validateAttachmentFile(file);
+      if (validationError) {
+        logEvent(
+          "Comment rejected: invalid attachment",
+          "ticket",
+          { ticketId, fileName: file.name, mimeType: file.type, size: file.size },
+          "warning",
+        );
+        return { success: false, message: validationError };
+      }
+    }
+
+    // All-or-nothing, exactly as createTicket does it: upload everything BEFORE
+    // touching the database, so a failed upload never leaves a comment behind
+    // carrying only some of its files.
+    const uploaded: AttachmentUpload[] = [];
+    for (const file of files) {
+      try {
+        uploaded.push(await uploadAttachment(file));
+      } catch (error) {
+        logEvent(
+          "Cloudinary upload failed while posting a comment",
+          "ticket",
+          { ticketId, fileName: file.name, size: file.size },
+          "error",
+          error,
+        );
+        await Promise.all(
+          uploaded.map((asset) => destroyAsset(asset.publicId, asset.resourceType)),
+        );
+        return {
+          success: false,
+          message: `Failed to upload "${file.name}" — your comment was not posted`,
+        };
+      }
+    }
+
     let comment;
     try {
       comment = await prisma.$transaction(async (tx) => {
         const created = await tx.ticketComment.create({
           data: { body, ticketId, userId: user.id },
         });
+        if (uploaded.length > 0) {
+          await tx.commentAttachment.createMany({
+            data: uploaded.map((asset) => ({
+              ...asset,
+              commentId: created.id,
+              // Recorded from the session, never from form data.
+              uploadedById: user.id,
+            })),
+          });
+        }
         if (bumpToInProgress) {
           await tx.ticket.update({
             where: { id: ticketId },
@@ -1131,15 +1396,20 @@ export const addTicketComment = async (
       logEvent(
         "Failed to persist ticket comment",
         "ticket",
-        { ticketId, statusBumped: bumpToInProgress },
+        { ticketId, statusBumped: bumpToInProgress, attachments: uploaded.length },
         "error",
         error,
+      );
+      // The comment was not written, so its assets are unreachable: sweep them
+      // rather than leaking a Cloudinary file per failed post.
+      await Promise.all(
+        uploaded.map((asset) => destroyAsset(asset.publicId, asset.resourceType)),
       );
       return { success: false, message: "Failed to post your comment" };
     }
 
     // Only metadata is logged — the comment body is user content and must not
-    // end up in Sentry.
+    // end up in Sentry, and neither do file names.
     logEvent(
       `Comment ${comment.id} added to ticket ${ticketId}`,
       "ticket",
@@ -1150,6 +1420,8 @@ export const addTicketComment = async (
         authorRole: user.role,
         statusBumped: bumpToInProgress,
         bodyLength: body.length,
+        attachments: uploaded.length,
+        totalBytes: uploaded.reduce((sum, asset) => sum + asset.size, 0),
       },
       "info",
     );
@@ -1168,7 +1440,13 @@ export const addTicketComment = async (
       });
     }
 
-    return { success: true, message: "Comment posted" };
+    return {
+      success: true,
+      message:
+        uploaded.length > 0
+          ? `Comment posted with ${uploaded.length} attachment${uploaded.length === 1 ? "" : "s"}`
+          : "Comment posted",
+    };
   } catch (error) {
     logEvent(
       "Failed to add ticket comment",

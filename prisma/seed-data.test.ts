@@ -3,12 +3,14 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   ALLOWED_MIME_TYPES,
+  MAX_COMMENT_FILES,
   MAX_FILES,
   MAX_FILE_SIZE,
 } from "@/lib/attachment-limits";
 import {
   buildSeedPlan,
   DEFAULT_ATTACHMENT_TICKET_RATIO,
+  DEFAULT_COMMENT_ATTACHMENT_RATIO,
   DEFAULT_SOFT_DELETED_COMMENTS,
   DEFAULT_USER_COUNT,
   mulberry32,
@@ -424,6 +426,86 @@ describe("attachments", () => {
   });
 });
 
+describe("comment attachments", () => {
+  const commentFiles = allComments.flatMap(({ ticket, comment }) =>
+    comment.attachments.map((attachment) => ({ ticket, comment, attachment })),
+  );
+
+  it("seeds some, or the feature is invisible without manual setup", () => {
+    expect(commentFiles.length).toBeGreaterThan(0);
+    expect(DEFAULT_COMMENT_ATTACHMENT_RATIO).toBeGreaterThan(0);
+  });
+
+  it("respects the per-comment budget, which is separate from the ticket's", () => {
+    for (const { comment } of allComments) {
+      expect(comment.attachments.length).toBeLessThanOrEqual(MAX_COMMENT_FILES);
+    }
+    // A ticket's own allowance must not be shared: a comment carrying files
+    // still leaves the ticket's budget untouched.
+    const withBoth = plan.tickets.find(
+      (t) => t.attachments.length > 0 && t.comments.some((c) => c.attachments.length > 0),
+    );
+    expect(withBoth).toBeDefined();
+    expect(withBoth!.attachments.length).toBeLessThanOrEqual(MAX_FILES);
+  });
+
+  it("only uses MIME types the app accepts", () => {
+    for (const { attachment } of commentFiles) {
+      expect(ALLOWED_MIME_TYPES).toContain(attachment.mimeType);
+    }
+  });
+
+  it("matches the extension to the MIME type", () => {
+    const extensionFor: Record<string, string> = {
+      "image/png": "png",
+      "image/jpeg": "jpg",
+      "image/webp": "webp",
+      "application/pdf": "pdf",
+    };
+    for (const { attachment } of commentFiles) {
+      expect(attachment.fileName.endsWith(`.${extensionFor[attachment.mimeType]}`)).toBe(
+        true,
+      );
+    }
+  });
+
+  it("gives every file a name unique across tickets AND comments", () => {
+    // One shared counter feeds both planners; a separate counter would let a
+    // comment file and a ticket file collide on the same public id.
+    const names = [
+      ...plan.tickets.flatMap((t) => t.attachments.map((a) => a.fileName)),
+      ...commentFiles.map(({ attachment }) => attachment.fileName),
+    ];
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("never attaches files to a comment seeded already removed", () => {
+    // A removed comment withholds its files in the thread and
+    // deleteCommentAttachment refuses to touch them, so such a row would be
+    // unreachable and would make the feature look broken.
+    for (const { comment } of allComments) {
+      if (comment.removedBy) {
+        expect(comment.attachments).toHaveLength(0);
+      }
+    }
+  });
+
+  it("leaves live comments on at least one file each way", () => {
+    const attachedKinds = new Set<string>();
+    for (const { comment } of allComments) {
+      if (comment.attachments.length > 0) attachedKinds.add(comment.authorKind);
+    }
+    expect(attachedKinds).toEqual(new Set(["client", "staff"]));
+  });
+
+  it("produces nothing when the ratio is zero", () => {
+    const offline = buildSeedPlan({ seed: "no-files", now: NOW, commentAttachmentRatio: 0 });
+    expect(
+      offline.tickets.flatMap((t) => t.comments.flatMap((c) => c.attachments)),
+    ).toHaveLength(0);
+  });
+});
+
 describe("shared attachment bounds", () => {
   it("uses the app's real MIME allow-list, not a copy", () => {
     // The seed used to duplicate these three constants and rely on a drift test
@@ -439,6 +521,13 @@ describe("shared attachment bounds", () => {
     expect(MAX_FILES).toBe(5);
     for (const ticket of plan.tickets) {
       expect(ticket.attachments.length).toBeLessThanOrEqual(MAX_FILES);
+    }
+  });
+
+  it("declares a comment budget the app also enforces", () => {
+    expect(MAX_COMMENT_FILES).toBe(5);
+    for (const comment of allComments.map((c) => c.comment)) {
+      expect(comment.attachments.length).toBeLessThanOrEqual(MAX_COMMENT_FILES);
     }
   });
 

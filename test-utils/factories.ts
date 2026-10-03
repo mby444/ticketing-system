@@ -20,11 +20,24 @@ export const makeUser = (
   ...overrides,
 });
 
-/** Builds a FormData shaped like a real <form> submission. */
-export const form = (entries: Record<string, string | File>) => {
+/**
+ * Builds a FormData shaped like a real <form> submission.
+ *
+ * An array value appends under one key rather than overwriting, because a
+ * `<input type="file" multiple>` submits every file under the same name and
+ * `set` would keep only the last one — which silently turns a five-file upload
+ * test into a one-file test that still passes.
+ */
+export const form = (
+  entries: Record<string, string | File | (string | File)[]>,
+) => {
   const data = new FormData();
   for (const [key, value] of Object.entries(entries)) {
-    data.set(key, value);
+    if (Array.isArray(value)) {
+      for (const entry of value) data.append(key, entry);
+    } else {
+      data.set(key, value);
+    }
   }
   return data;
 };

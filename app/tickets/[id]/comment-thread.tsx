@@ -1,6 +1,9 @@
 import type { Role } from "@/generated/prisma/client";
 import { canDeleteUserContent } from "@/lib/delete-permissions";
-import { deleteComment } from "@/actions/ticket.actions";
+import { deleteComment, deleteCommentAttachment } from "@/actions/ticket.actions";
+import AttachmentGrid, {
+  type AttachmentView,
+} from "@/components/AttachmentGrid";
 import DeleteButton from "@/components/DeleteButton";
 
 /** Mirrors the `comments` include in getTicketById. */
@@ -16,6 +19,7 @@ type TicketCommentView = {
     role: Role;
   };
   deletedBy: { id: string; name: string | null; email: string } | null;
+  attachments: AttachmentView[];
 };
 
 /**
@@ -27,6 +31,16 @@ type TicketCommentView = {
  * with the body withheld — a thread that simply lost a support reply reads as if
  * the customer were talking to themselves. The author name stays visible so the
  * shape of the conversation is preserved, but the text is gone for good.
+ *
+ * Files on a removed comment are withheld for the same reason: the rows are kept
+ * (so the thread has no hole and the attachments stay auditable), but a soft
+ * delete is meant to retract the *message*, and a screenshot is part of it.
+ * `deleteCommentAttachment` enforces the same rule server-side, so the withheld
+ * files cannot be deleted through the action either.
+ *
+ * Files on a live comment render through the shared `AttachmentGrid` with
+ * `showBadge` off: the bubble already says "Support Staff" for its author, so a
+ * second badge on the same message would be noise.
  */
 const CommentThread = ({
   comments,
@@ -105,10 +119,22 @@ const CommentThread = ({
                   )}
                 </p>
               ) : (
-                /* Rendered as text: React escapes it, so never use raw HTML here. */
-                <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">
-                  {comment.body}
-                </p>
+                <>
+                  {/* Rendered as text: React escapes it, so never use raw HTML here. */}
+                  <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">
+                    {comment.body}
+                  </p>
+                  <div className="mt-2">
+                    <AttachmentGrid
+                      attachments={comment.attachments}
+                      viewer={viewer}
+                      ticketOwnerId={ticketOwnerId}
+                      deleteAction={deleteCommentAttachment}
+                      size="sm"
+                      showBadge={false}
+                    />
+                  </div>
+                </>
               )}
             </div>
           </li>

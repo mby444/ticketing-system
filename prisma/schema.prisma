@@ -48,6 +48,7 @@ model User {
   // Both User -> TicketComment relations must be named now that there are two.
   comments        TicketComment[] @relation("CommentAuthor")
   deletedComments TicketComment[] @relation("CommentDeletedBy")
+  commentAttachmentsUploaded CommentAttachment[] @relation("UploadedCommentAttachments")
 }
 
 model Ticket {
@@ -103,6 +104,36 @@ model TicketComment {
   deletedAt   DateTime?
   deletedById String?
   deletedBy   User?    @relation("CommentDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+  // Files attached to this comment. A separate model from TicketAttachment on
+  // purpose: the two have independent budgets (MAX_FILES per ticket,
+  // MAX_COMMENT_FILES per comment) and independent delete paths, and a comment
+  // can be soft-deleted while its ticket lives on.
+  //
+  // These rows are NOT deleted when the comment is soft-deleted — the thread is
+  // frozen, not erased. They simply stop being rendered, which is why
+  // deleteCommentAttachment refuses to touch them.
+  attachments CommentAttachment[]
 
   @@index([ticketId, createdAt])
+}
+
+model CommentAttachment {
+  id           String   @id @default(cuid())
+  fileName     String
+  mimeType     String
+  size         Int
+  url          String
+  publicId     String
+  resourceType String
+  createdAt    DateTime @default(now())
+  commentId    Int
+  comment      TicketComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  // Deliberately has NO onDelete, for the same reason as
+  // TicketAttachment.uploadedById: the uploader is audit data, so deleting a
+  // user who uploaded a file must be blocked (RESTRICT) rather than silently
+  // removing files from a thread they do not own.
+  uploadedById String
+  uploadedBy   User     @relation("UploadedCommentAttachments", fields: [uploadedById], references: [id])
+
+  @@index([commentId])
 }

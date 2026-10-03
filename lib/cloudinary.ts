@@ -2,6 +2,7 @@ import { v2 as cloudinary, type UploadApiResponse } from "cloudinary";
 import { logEvent } from "@/utils/sentry";
 import {
   ALLOWED_MIME_TYPES,
+  MAX_COMMENT_FILES,
   MAX_FILES,
   MAX_FILE_SIZE,
 } from "@/lib/attachment-limits";
@@ -16,7 +17,7 @@ import {
  * the real values instead of copying them; they are re-exported here so every
  * existing call site keeps working unchanged.
  */
-export { ALLOWED_MIME_TYPES, MAX_FILES, MAX_FILE_SIZE };
+export { ALLOWED_MIME_TYPES, MAX_COMMENT_FILES, MAX_FILES, MAX_FILE_SIZE };
 
 /** Cloudinary Media Library folder for all ticket attachments. */
 export const ATTACHMENTS_FOLDER = "quickticket/tickets";

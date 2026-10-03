@@ -38,6 +38,18 @@ export const createPrismaMock = () => {
       delete: vi.fn(),
       count: vi.fn(),
     },
+    // Added with comment attachments. `createMany` is called inside the
+    // addTicketComment transaction, `findUnique`/`delete` by
+    // deleteCommentAttachment.
+    commentAttachment: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      createMany: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      count: vi.fn(),
+    },
     user: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
