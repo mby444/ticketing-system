@@ -12,9 +12,9 @@ const Navbar = async () => {
   const initialNotifications = user ? await getNotifications() : [];
 
   return (
-    <nav className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center">
+    <nav className="sticky top-0 z-50 backdrop-blur-md bg-white/80 border-b border-slate-200 px-6 py-4 flex justify-between items-center">
       <div>
-        <Link href="/" className="text-xl font-bold text-blue-600">
+        <Link href="/" className="text-xl font-bold text-indigo-600">
           QuickTicket
         </Link>
       </div>
@@ -24,24 +24,24 @@ const Navbar = async () => {
             {isStaff(user) && (
               <Link
                 href="/dashboard"
-                className="hover:underline text-gray-700 transition font-medium"
+                className="hover:underline text-slate-700 transition font-medium"
               >
                 Dashboard
               </Link>
             )}
             <Link
               href="/tickets/new"
-              className="hover:underline text-gray-700 transition"
+              className="hover:underline text-slate-700 transition"
             >
               New Ticket
             </Link>
             <Link
               href="/tickets"
-              className="hover:underline text-gray-700 transition"
+              className="hover:underline text-slate-700 transition"
             >
               My Tickets
             </Link>
-            <span className="text-xs uppercase tracking-wide text-gray-500 border border-gray-200 rounded px-2 py-1">
+            <span className="text-xs uppercase tracking-wide text-slate-600 border border-slate-300 rounded-full px-2.5 py-1">
               {user.role.replace("_", " ")}
             </span>
             <NotificationBell
@@ -54,13 +54,13 @@ const Navbar = async () => {
           <>
             <Link
               href="/login"
-              className="text-blue-600 hover:underline transition"
+              className="text-indigo-600 hover:underline transition"
             >
               Login
             </Link>
             <Link
               href="/register"
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+              className="bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700 transition"
             >
               Register
             </Link>
