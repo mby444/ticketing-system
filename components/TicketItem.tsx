@@ -13,25 +13,25 @@ const TicketItem = ({ ticket }: TicketItemProps) => {
   return (
     <div
       key={ticket.id}
-      className={`flex justify-between items-center bg-white rounded-lg shadow border border-gray-200 p-6 ${
+      className={`flex justify-between items-center bg-white shadow-sm rounded-xl border border-slate-200 p-6 hover:border-slate-300 transition-all duration-200 ${
         isClosed ? "opacity-50" : ""
       }`}
     >
       {/* Left Side */}
       <div>
-        <h2 className="text-xl font-semibold text-blue-600">
+        <h2 className="text-xl font-bold text-slate-900">
           {ticket.subject}
         </h2>
       </div>
       {/* Right Side */}
       <div className="text-right space-y-2">
-        <div className="text-sm text-gray-500">
+        <div className="text-sm text-slate-500">
           Priority:{" "}
           <span className={getPriorityClass(ticket.priority)}>
             {ticket.priority}
           </span>
         </div>
-        <div className="text-sm text-gray-500">
+        <div className="text-sm text-slate-500">
           Status:{" "}
           <span className={getStatusClass(ticket.status)}>
             {formatStatus(ticket.status)}
@@ -39,10 +39,10 @@ const TicketItem = ({ ticket }: TicketItemProps) => {
         </div>
         <Link
           href={`/tickets/${ticket.id}`}
-          className={`inline-block mt-2 text-sm px-3 py-1 rounded transition text-center ${
+          className={`inline-block mt-2 text-sm font-medium px-3 py-2 rounded-lg shadow-sm transition text-center ${
             isClosed
-              ? "bg-gray-400 text-gray-700 cursor-not-allowed pointer-events-none"
-              : "bg-blue-600 text-white hover:bg-blue-700 "
+              ? "bg-slate-400 text-slate-600 cursor-not-allowed pointer-events-none"
+              : "bg-indigo-600 text-white hover:bg-indigo-700 "
           }`}
         >
           View Ticket

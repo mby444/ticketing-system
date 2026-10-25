@@ -52,7 +52,7 @@ const StatusSelect = ({
         defaultValue={status}
         disabled={pending}
         onChange={handleSelect}
-        className="border border-gray-300 rounded px-2 py-1 text-sm disabled:opacity-60"
+        className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-60"
       >
         {STATUS_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
@@ -63,7 +63,7 @@ const StatusSelect = ({
       <button
         type="submit"
         disabled={pending || currentStatus === status}
-        className={`bg-blue-600 text-white text-sm px-3 py-1 rounded hover:bg-blue-700 transition ${pending || currentStatus === status ? "opacity-60 cursor-not-allowed" : ""}`}
+        className={`bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg px-3 py-2 shadow-sm transition ${pending || currentStatus === status ? "opacity-60 cursor-not-allowed disabled:opacity-60" : ""}`}
       >
         {pending ? "Saving…" : currentStatus === status ? "Saved" : "Save"}
       </button>

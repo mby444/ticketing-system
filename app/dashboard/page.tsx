@@ -28,8 +28,8 @@ const SectionHeading = ({
   count: number;
 }) => (
   <div className="flex items-center gap-2 mb-3">
-    <h2 className="text-xl font-semibold text-gray-800">{title}</h2>
-    <span className="text-xs font-semibold bg-blue-100 text-blue-700 rounded-full px-2 py-0.5">
+    <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
+    <span className="text-xs font-semibold bg-indigo-100 text-indigo-700 rounded-full px-2 py-0.5">
       {count}
     </span>
   </div>
@@ -38,7 +38,7 @@ const SectionHeading = ({
 // ReactNode rather than string: the filtered empty note interpolates a label,
 // which is a ReactNode rather than a single string.
 const EmptyNote = ({ children }: { children: ReactNode }) => (
-  <p className="text-center text-sm text-gray-500 bg-white border border-dashed border-gray-200 rounded-lg py-6">
+  <p className="text-center text-sm text-slate-500 bg-white border border-dashed border-slate-200 rounded-lg py-6">
     {children}
   </p>
 );
@@ -73,12 +73,12 @@ const FilterNav = ({
           aria-current={active ? "page" : undefined}
           className={`px-3 py-1.5 rounded-full text-sm border transition ${
             active
-              ? "bg-blue-600 text-white border-blue-600"
-              : "bg-white text-gray-700 border-gray-300 hover:bg-blue-50"
+              ? "bg-indigo-600 text-white border-indigo-600"
+              : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
           }`}
         >
           {DASHBOARD_FILTER_LABELS[option]}
-          <span className={active ? "ml-1.5 text-blue-100" : "ml-1.5 text-gray-400"}>
+          <span className={active ? "ml-1.5 text-indigo-100" : "ml-1.5 text-slate-400"}>
             {counts[option] ?? 0}
           </span>
         </Link>
@@ -128,12 +128,12 @@ const StaffDashboardPage = async (props: {
   const filteredView = filter !== DEFAULT_DASHBOARD_FILTER;
 
   return (
-    <div className="min-h-screen bg-blue-50 p-8">
-      <div className="max-w-5xl mx-auto">
-        <h1 className="text-3xl font-bold text-blue-600 mb-2 text-center">
+    <div className="min-h-screen bg-slate-50 p-8">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-3xl font-bold text-indigo-600 mb-2 text-center">
           Staff Dashboard
         </h1>
-        <p className="text-center text-gray-600 mb-6">
+        <p className="text-center text-slate-600 mb-6">
           {filteredView ? (
             <>
               Showing {filtered.length} of {tickets.length} tickets —{" "}
@@ -151,7 +151,7 @@ const StaffDashboardPage = async (props: {
         <FilterNav filter={filter} sort={sort} counts={counts} />
 
         {tickets.length === 0 ? (
-          <p className="text-center text-gray-600">No Tickets Yet</p>
+          <p className="text-center text-slate-600">No Tickets Yet</p>
         ) : filteredView ? (
           // A filtered view is a single table. Keeping the two-section layout
           // here would guarantee an empty section — "unassigned" can never

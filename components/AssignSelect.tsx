@@ -52,7 +52,7 @@ const AssignSelect = ({
         defaultValue={assigneeId ?? ""}
         disabled={pending}
         onChange={handleSelect}
-        className="border border-gray-300 rounded px-2 py-1 text-sm disabled:opacity-60"
+        className="border border-slate-300 rounded-lg px-2 py-1 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-60"
       >
         <option value="">Unassigned</option>
         {agents.map((agent) => (
@@ -64,7 +64,7 @@ const AssignSelect = ({
       <button
         type="submit"
         disabled={pending || currentAssigneeId === assigneeId}
-        className={`bg-blue-600 text-white text-sm px-3 py-1 rounded hover:bg-blue-700 transition ${pending || currentAssigneeId === assigneeId ? "opacity-60 cursor-not-allowed" : ""}`}
+        className={`bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg px-3 py-2 shadow-sm transition ${pending || currentAssigneeId === assigneeId ? "opacity-60 cursor-not-allowed disabled:opacity-60" : ""}`}
       >
         {pending
           ? "Assigning…"

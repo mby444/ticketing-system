@@ -56,7 +56,7 @@ const SortableHeader = ({
         href={buildDashboardHref({ filter, sort: target })}
         scroll={false}
         title={`Sort by ${label.toLowerCase()}`}
-        className="inline-flex items-center gap-1 hover:text-gray-800 transition"
+        className="inline-flex items-center gap-1 hover:text-slate-800 transition"
       >
         {label}
         <span aria-hidden="true" className="text-[9px] leading-none">
@@ -84,9 +84,9 @@ const TicketTable = ({
   filter: DashboardFilter;
   sort: DashboardSort;
 }) => (
-  <div className="bg-white rounded-lg shadow border border-gray-200 overflow-x-auto">
+  <div className="bg-white shadow-sm rounded-xl border border-slate-200 overflow-x-auto">
     <table className="w-full text-left text-sm">
-      <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
+      <thead className="bg-slate-50 text-slate-500 uppercase text-xs">
         <tr>
           {/* Not sortable: no subject sort. */}
           <th scope="col" className="px-4 py-3">
@@ -101,16 +101,16 @@ const TicketTable = ({
       </thead>
       <tbody className="divide-y divide-gray-100">
         {tickets.map((ticket) => (
-          <tr key={ticket.id} className="hover:bg-gray-50 align-top">
+          <tr key={ticket.id} className="hover:bg-slate-50 align-top">
             <td className="px-4 py-3">
               <Link
                 href={`/tickets/${ticket.id}`}
-                className="font-medium text-blue-600 hover:underline"
+                className="font-medium text-indigo-600 hover:underline"
               >
                 {ticket.subject}
               </Link>
               {/* Priority now has its own column, so it must not repeat here. */}
-              <p className="text-xs text-gray-500">#{ticket.id}</p>
+              <p className="text-xs text-slate-500">#{ticket.id}</p>
             </td>
             <td className="px-4 py-3 whitespace-nowrap">
               <span className={getPriorityClass(ticket.priority)}>
@@ -118,8 +118,8 @@ const TicketTable = ({
               </span>
             </td>
             <td className="px-4 py-3">
-              <p>{ticket.user.name ?? ticket.user.email}</p>
-              <p className="text-xs text-gray-500">{ticket.user.email}</p>
+              <p className="text-slate-900">{ticket.user.name ?? ticket.user.email}</p>
+              <p className="text-xs text-slate-500">{ticket.user.email}</p>
             </td>
             <td className="px-4 py-3">
               <StatusSelect ticketId={ticket.id} status={ticket.status} />
@@ -131,7 +131,7 @@ const TicketTable = ({
                 agents={agents}
               />
             </td>
-            <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
+            <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
               {new Date(ticket.createdAt).toLocaleDateString()}
             </td>
           </tr>
