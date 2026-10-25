@@ -50,6 +50,3 @@ next-env.d.ts
 
 # Dev scripts
 *.bat
-
-# OpenCode
-opencode.json
