@@ -322,7 +322,6 @@ async function sendPasswordResetOtp(job: {
         1,
         Math.round((otp.expiresAt.getTime() - Date.now()) / 60000),
       ),
-      resetUrl: `${process.env.APP_URL}/forgot-password?step=code`,
     }),
   });
 

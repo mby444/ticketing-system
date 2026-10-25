@@ -1,4 +1,4 @@
-import { Button, Text } from "@react-email/components";
+import { Text } from "@react-email/components";
 import { EmailLayout } from "./email-layout";
 
 const codeStyle = {
@@ -32,11 +32,9 @@ const mutedStyle = {
 export function PasswordResetOtpEmail({
   code,
   expiresInMinutes,
-  resetUrl,
 }: {
   code: string;
   expiresInMinutes: number;
-  resetUrl: string;
 }) {
   return (
     <EmailLayout heading="Reset your QuickTicket password">
@@ -49,20 +47,10 @@ export function PasswordResetOtpEmail({
         you did not ask to reset your password, you can ignore this email — your
         password will not change.
       </Text>
-      <Button
-        href={resetUrl}
-        style={{
-          backgroundColor: "#2563eb",
-          borderRadius: "6px",
-          color: "#ffffff",
-          display: "inline-block",
-          margin: "16px 0",
-          padding: "10px 16px",
-          textDecoration: "none",
-        }}
-      >
-        Choose a new password
-      </Button>
+      <Text style={mutedStyle}>
+        Return to the reset page and enter this code together with your new
+        password.
+      </Text>
     </EmailLayout>
   );
 }
