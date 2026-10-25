@@ -25,7 +25,7 @@ const MarkAllReadButton = ({ unreadCount }: { unreadCount: number }) => {
     <form action={formAction}>
       <button
         type="submit"
-        className="text-sm font-medium text-blue-600 transition hover:text-blue-800"
+        className="text-sm font-medium text-indigo-600 transition hover:text-indigo-800"
       >
         Mark all read
       </button>

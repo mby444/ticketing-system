@@ -82,27 +82,27 @@ const NewTicketForm = () => {
   const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
 
   return (
-    <div className="w-full max-w-md bg-white shadow-md rounded-lg p-8 border border-gray-200">
-      <h1 className="text-3xl font-bold mb-6 text-center text-blue-600">
+    <div className="w-full max-w-4xl mx-auto bg-white shadow-sm rounded-xl border border-slate-200 p-6">
+      <h1 className="text-3xl font-bold mb-6 text-center text-indigo-600">
         Submit a Support Ticket
       </h1>
-      <form action={formAction} className="space-y-4 text-gray-700">
+      <form action={formAction} className="space-y-5 text-slate-700">
         <input
-          className="w-full border border-gray-200 p-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="w-full border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           type="text"
           name="subject"
           placeholder="Subject"
           disabled={pending}
         />
         <textarea
-          className="w-full border border-gray-200 p-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-400"
+          className="w-full border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           name="description"
           placeholder="Describe your issue"
           rows={4}
           disabled={pending}
         />
         <select
-          className="w-full border border-gray-200 p-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-700"
+          className="w-full border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700"
           name="priority"
           defaultValue="Low"
           disabled={pending}
@@ -117,13 +117,13 @@ const NewTicketForm = () => {
         <div>
           <label
             htmlFor="attachments"
-            className="block text-sm font-medium mb-1 text-gray-600"
+            className="block text-sm font-medium mb-1 text-slate-600"
           >
             Attachments (optional)
           </label>
           <input
             id="attachments"
-            className="w-full text-sm text-gray-600 file:mr-3 file:rounded file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-blue-700 hover:file:bg-blue-100"
+            className="w-full text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-indigo-700 hover:file:bg-indigo-100"
             type="file"
             name="attachments"
             multiple
@@ -131,24 +131,24 @@ const NewTicketForm = () => {
             onChange={handleFileChange}
             disabled={pending}
           />
-          <p className="text-xs text-gray-400 mt-1">
+          <p className="text-xs text-slate-400 mt-1">
             JPG, PNG, WebP, or PDF — up to {MAX_FILES} files, max 5 MB each
           </p>
           {selectedFiles.length > 0 && (
-            <div className="mt-2 text-xs text-gray-500">
+            <div className="mt-2 text-xs text-slate-500">
               <p>
                 {selectedFiles.length} file
                 {selectedFiles.length === 1 ? "" : "s"} ·{" "}
                 {(totalSize / 1024).toFixed(0)} KB
               </p>
-              <ul className="mt-1 space-y-0.5 text-gray-600">
+              <ul className="mt-1 space-y-0.5 text-slate-600">
                 {selectedFiles.map((file) => (
                   <li
                     key={`${file.name}-${file.size}`}
                     className="flex justify-between gap-2"
                   >
                     <span className="truncate">{file.name}</span>
-                    <span className="shrink-0 text-gray-400">
+                    <span className="shrink-0 text-slate-400">
                       {(file.size / 1024).toFixed(0)} KB
                     </span>
                   </li>
@@ -159,7 +159,7 @@ const NewTicketForm = () => {
         </div>
 
         <button
-          className="w-full bg-blue-600 text-white p-3 rounded hover:bg-blue-700 transition disabled:opacity-50"
+          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg px-4 py-2 shadow-sm transition disabled:opacity-60"
           type="submit"
           disabled={pending}
         >

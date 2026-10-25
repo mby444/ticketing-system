@@ -71,19 +71,19 @@ const AttachForm = ({ ticketId }: { ticketId: number }) => {
     <form
       ref={formRef}
       action={formAction}
-      className="border-t border-gray-100 pt-4"
+      className="border-t border-slate-100 pt-4"
     >
       <input type="hidden" name="ticketId" value={ticketId} />
       <label
         htmlFor="attach-more"
-        className="block text-sm font-medium text-gray-600 mb-1"
+        className="block text-sm font-medium text-slate-600 mb-1"
       >
         Add attachments
       </label>
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
         <input
           id="attach-more"
-          className="text-sm text-gray-600 file:mr-3 file:rounded file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-blue-700 hover:file:bg-blue-100"
+          className="text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-indigo-700 hover:file:bg-indigo-100"
           type="file"
           name="attachments"
           multiple
@@ -94,12 +94,12 @@ const AttachForm = ({ ticketId }: { ticketId: number }) => {
         <button
           type="submit"
           disabled={pending}
-          className="bg-blue-600 text-white text-sm px-4 py-2 rounded hover:bg-blue-700 transition disabled:opacity-60"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg px-4 py-2 shadow-sm transition disabled:opacity-60"
         >
           {pending ? "Uploading…" : "Upload"}
         </button>
       </div>
-      <p className="text-xs text-gray-400 mt-1">
+      <p className="text-xs text-slate-400 mt-1">
         JPG, PNG, WebP, or PDF — up to {MAX_FILES} files per ticket, max 5 MB
         each
       </p>

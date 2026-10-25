@@ -18,10 +18,10 @@ const NotificationsPage = async () => {
   const unread = notifications.filter((n) => !n.readAt).length;
 
   return (
-    <div className="min-h-screen bg-blue-50 p-8">
+    <div className="min-h-screen bg-slate-50 p-8">
       <div className="max-w-3xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-blue-600">Notifications</h1>
+          <h1 className="text-2xl font-bold text-indigo-600">Notifications</h1>
           <MarkAllRead unreadCount={unread} />
         </div>
 
@@ -30,32 +30,32 @@ const NotificationsPage = async () => {
             No notifications yet. Activity on your tickets will show up here.
           </p>
         ) : (
-          <ul className="divide-y divide-gray-100 overflow-hidden rounded-lg border border-gray-200 bg-white">
+          <ul className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white">
             {notifications.map((notification) => (
               <li key={notification.id}>
                 <Link
                   href={`/tickets/${notification.ticketId}`}
-                  className={`flex items-start gap-3 px-4 py-3 transition hover:bg-blue-50 ${
-                    notification.readAt ? "" : "bg-blue-50/40"
+                  className={`flex items-start gap-3 px-4 py-3 transition hover:bg-slate-50 ${
+                    notification.readAt ? "" : "bg-indigo-50/40"
                   }`}
                 >
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm text-gray-900">
+                    <span className="block text-sm text-slate-900">
                       {notification.title}
                     </span>
                     {notification.body && (
-                      <span className="mt-0.5 block text-xs text-gray-500">
+                      <span className="mt-0.5 block text-xs text-slate-500">
                         {notification.body}
                       </span>
                     )}
-                    <span className="mt-1 block text-xs text-gray-400">
+                    <span className="mt-1 block text-xs text-slate-400">
                       {formatRelativeTime(notification.createdAt)}
                     </span>
                   </span>
                   {!notification.readAt && (
                     <span
                       aria-label="Unread"
-                      className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-600"
+                      className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-indigo-600"
                     />
                   )}
                 </Link>
@@ -66,7 +66,7 @@ const NotificationsPage = async () => {
 
         <Link
           href="/tickets"
-          className="inline-block rounded bg-white px-4 py-2 text-sm text-gray-700 transition hover:bg-gray-50"
+          className="inline-block rounded bg-white px-4 py-2 text-sm text-slate-700 transition hover:bg-slate-50"
         >
           ← Back to Tickets
         </Link>

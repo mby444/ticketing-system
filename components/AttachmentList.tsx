@@ -26,8 +26,8 @@ const AttachmentList = ({
   if (attachments.length === 0) return null;
 
   return (
-    <div className="text-gray-700">
-      <h2 className="text-lg font-semibold mb-2">Attachments</h2>
+    <div className="text-slate-700">
+      <h2 className="text-lg font-semibold text-slate-900 mb-2">Attachments</h2>
       <AttachmentGrid
         attachments={attachments}
         viewer={viewer}

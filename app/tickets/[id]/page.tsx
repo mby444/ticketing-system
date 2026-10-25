@@ -29,103 +29,134 @@ const TicketDetailsPage = async (props: {
 
   const isClosed = ticket.status === "Closed";
 
-  // Staff get an editable assignee plus the requester's identity; a CLIENT can
-  // only ever open their own ticket (canAccessTicket), so the requester field
-  // would be redundant for them. listAgents is staff-gated server-side too —
-  // we just avoid paying for the call when it cannot succeed.
   const staffView = isStaff(viewer);
   const agents = staffView ? await listAgents() : [];
 
   return (
-    <div className="min-h-screen bg-blue-50 p-8">
-      <div className="max-w-2xl mx-auto bg-white rounded-lg shadow border border-gray-200 p-8 space-y-6">
-        <h1 className="text-3xl font-bold text-blue-600">{ticket.subject}</h1>
+    <div className="min-h-screen bg-slate-50 p-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <main className="lg:col-span-7 space-y-6">
+            <h1 className="text-3xl font-bold text-indigo-600">
+              {ticket.subject}
+            </h1>
 
-        <div className="text-gray-700">
-          <h2 className="text-lg font-semibold mb-2">Description</h2>
-          <p>{ticket.description}</p>
-        </div>
+            <div className="text-slate-700">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                Description
+              </h2>
+              <p className="text-slate-700">{ticket.description}</p>
+            </div>
 
-        <div className="text-gray-700">
-          <h2 className="text-lg font-semibold mb-2">Priority</h2>
-          <p className={getPriorityClass(ticket.priority)}>{ticket.priority}</p>
-        </div>
-
-        <div className="text-gray-700">
-          <h2 className="text-lg font-semibold mb-2">Status</h2>
-          <p className={getStatusClass(ticket.status)}>
-            {formatStatus(ticket.status)}
-          </p>
-        </div>
-
-        {staffView && (
-          <div className="text-gray-700">
-            <h2 className="text-lg font-semibold mb-2">Requester</h2>
-            <p>{ticket.user.name ?? ticket.user.email}</p>
-            <p className="text-xs text-gray-500">{ticket.user.email}</p>
-          </div>
-        )}
-
-        <div className="text-gray-700">
-          <h2 className="text-lg font-semibold mb-2">Assignee</h2>
-          {staffView ? (
-            <AssignSelect
-              ticketId={ticket.id}
-              assigneeId={ticket.assigneeId}
-              agents={agents}
-            />
-          ) : ticket.assignedTo ? (
-            <>
-              <p>{ticket.assignedTo.name ?? ticket.assignedTo.email}</p>
-              <p className="text-xs text-gray-500">
-                {ticket.assignedTo.email}
+            <div className="text-slate-700">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                Priority
+              </h2>
+              <p className={getPriorityClass(ticket.priority)}>
+                {ticket.priority}
               </p>
-            </>
-          ) : (
-            <p className="text-gray-500">Not assigned</p>
-          )}
-        </div>
+            </div>
 
-        <AttachmentList
-          attachments={ticket.attachments}
-          ticketOwnerId={ticket.userId}
-          viewer={viewer}
-        />
+            <div className="text-slate-700">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                Status
+              </h2>
+              <p className={getStatusClass(ticket.status)}>
+                {formatStatus(ticket.status)}
+              </p>
+            </div>
 
-        <div className="text-gray-700">
-          <h2 className="text-lg font-semibold mb-2">
-            Conversation
-            {ticket.comments.length > 0 ? ` (${ticket.comments.length})` : ""}
-          </h2>
-          <div className="space-y-4">
-            <CommentThread
-              comments={ticket.comments}
-              viewerId={viewer.id}
+            <AttachmentList
+              attachments={ticket.attachments}
               ticketOwnerId={ticket.userId}
-              isClosed={isClosed}
               viewer={viewer}
             />
-            <CommentForm ticketId={ticket.id} isClosed={isClosed} />
-          </div>
+
+            <AttachForm ticketId={ticket.id} />
+
+            <div className="text-slate-700">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                Conversation
+                {ticket.comments.length > 0 ? ` (${ticket.comments.length})` : ""}
+              </h2>
+              <div className="space-y-4">
+                <CommentThread
+                  comments={ticket.comments}
+                  viewerId={viewer.id}
+                  ticketOwnerId={ticket.userId}
+                  isClosed={isClosed}
+                  viewer={viewer}
+                />
+                <CommentForm ticketId={ticket.id} isClosed={isClosed} />
+              </div>
+            </div>
+          </main>
+
+          <aside className="lg:col-span-5 space-y-6">
+            {staffView && (
+              <div className="text-slate-700">
+                <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                  Requester
+                </h2>
+                <p className="text-slate-900">
+                  {ticket.user.name ?? ticket.user.email}
+                </p>
+                <p className="text-xs text-slate-500">{ticket.user.email}</p>
+              </div>
+            )}
+
+            <div className="text-slate-700">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                Assignee
+              </h2>
+              {staffView ? (
+                <AssignSelect
+                  ticketId={ticket.id}
+                  assigneeId={ticket.assigneeId}
+                  agents={agents}
+                />
+              ) : ticket.assignedTo ? (
+                <>
+                  <p className="text-slate-900">
+                    {ticket.assignedTo.name ?? ticket.assignedTo.email}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {ticket.assignedTo.email}
+                  </p>
+                </>
+              ) : (
+                <p className="text-slate-500">Not assigned</p>
+              )}
+            </div>
+
+            <div className="text-slate-700">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                Created At
+              </h2>
+              <p className="text-slate-700">
+                {new Date(ticket.createdAt).toLocaleString()}
+              </p>
+            </div>
+
+            <div className="text-slate-700">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                SLA
+              </h2>
+              <p className="text-slate-700">Response within 24 hours</p>
+            </div>
+
+            {!isClosed && (
+              <CloseTicketButton ticketId={ticket.id} isClosed={isClosed} />
+            )}
+
+            <Link
+              href="/tickets"
+              className="inline-block rounded bg-indigo-600 text-white px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-indigo-700"
+            >
+              ← Back to Tickets
+            </Link>
+          </aside>
         </div>
-
-        <div className="text-gray-700">
-          <h2 className="text-lg font-semibold mb-2">Created At</h2>
-          <p>{new Date(ticket.createdAt).toLocaleString()}</p>
-        </div>
-
-        <Link
-          href="/tickets"
-          className="inline-block bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-        >
-          ← Back to Tickets
-        </Link>
-
-        {!isClosed && (
-          <CloseTicketButton ticketId={ticket.id} isClosed={isClosed} />
-        )}
-
-        <AttachForm ticketId={ticket.id} />
       </div>
     </div>
   );

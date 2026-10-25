@@ -78,7 +78,7 @@ const CommentForm = ({
   // Defence in depth — the action rejects Closed tickets for every role.
   if (isClosed) {
     return (
-      <p className="text-sm text-gray-500 border border-dashed border-gray-300 rounded p-4">
+      <p className="text-sm text-slate-500 border border-dashed border-slate-300 rounded p-4">
         This ticket is closed. Reopen it to continue the conversation.
       </p>
     );
@@ -89,7 +89,7 @@ const CommentForm = ({
       <input type="hidden" name="ticketId" value={ticketId} />
       <label
         htmlFor="comment-body"
-        className="block text-sm font-medium text-gray-600"
+        className="block text-sm font-medium text-slate-600"
       >
         Add a comment
       </label>
@@ -100,12 +100,12 @@ const CommentForm = ({
         maxLength={MAX_COMMENT_LENGTH}
         placeholder="Write your reply…"
         disabled={pending}
-        className="w-full border border-gray-200 p-3 rounded text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-60"
+        className="w-full border border-slate-300 rounded-lg p-3 rounded text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
       />
       <div>
         <label
           htmlFor="comment-attachments"
-          className="block text-sm font-medium text-gray-600"
+          className="block text-sm font-medium text-slate-600"
         >
           Attachments (optional)
         </label>
@@ -117,21 +117,21 @@ const CommentForm = ({
           accept="image/jpeg,image/png,image/webp,application/pdf"
           onChange={handleFileChange}
           disabled={pending}
-          className="text-sm text-gray-600 file:mr-3 file:rounded file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-blue-700 hover:file:bg-blue-100"
+          className="text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-indigo-700 hover:file:bg-indigo-100"
         />
-        <p className="text-xs text-gray-400 mt-1">
+        <p className="text-xs text-slate-400 mt-1">
           JPG, PNG, WebP, or PDF — up to {MAX_COMMENT_FILES} files per comment,
           max 5 MB each
         </p>
       </div>
       <div className="flex items-center justify-between">
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-slate-400">
           Up to {MAX_COMMENT_LENGTH} characters
         </p>
         <button
           type="submit"
           disabled={pending}
-          className="bg-blue-600 text-white text-sm px-4 py-2 rounded hover:bg-blue-700 transition disabled:opacity-60"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg px-4 py-2 shadow-sm transition disabled:opacity-60"
         >
           {pending ? "Posting…" : "Post comment"}
         </button>

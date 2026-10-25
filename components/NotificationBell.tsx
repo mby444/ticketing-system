@@ -163,13 +163,13 @@ const NotificationBell = ({
         }
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        className="relative rounded p-2 text-gray-600 transition hover:bg-gray-100 hover:text-gray-900"
+        className="relative rounded p-2 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
       >
         <FaBell className="h-5 w-5" aria-hidden="true" />
         {unreadCount > 0 && (
           <span
             aria-hidden="true"
-            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white"
+            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white"
           >
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
@@ -181,16 +181,16 @@ const NotificationBell = ({
           ref={panelRef}
           role="dialog"
           aria-labelledby={headingId}
-          className="absolute right-0 z-50 mt-2 w-96 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
+          className="absolute right-0 z-50 mt-2 w-96 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
         >
-          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <h2
               id={headingId}
-              className="text-sm font-semibold text-gray-900"
+              className="text-sm font-semibold text-slate-900"
             >
               Notifications
               {unreadCount > 0 && (
-                <span className="ml-2 font-normal text-gray-500">
+                <span className="ml-2 font-normal text-slate-500">
                   {unreadCount} unread
                 </span>
               )}
@@ -207,7 +207,7 @@ const NotificationBell = ({
               >
                 <button
                   type="submit"
-                  className="text-xs font-medium text-blue-600 transition hover:text-blue-800"
+                  className="text-xs font-medium text-indigo-600 transition hover:text-indigo-800"
                 >
                   Mark all read
                 </button>
@@ -216,14 +216,14 @@ const NotificationBell = ({
           </div>
 
           {notifications.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-gray-500">
+            <p className="px-4 py-8 text-center text-sm text-slate-500">
               No notifications yet
             </p>
           ) : (
             <ul className="max-h-96 divide-y divide-gray-100 overflow-y-auto">
               {grouped.map(([day, items]) => (
                 <li key={day}>
-                  <p className="bg-gray-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  <p className="bg-slate-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
                     {dayLabel(day)}
                   </p>
                   <ul>
@@ -240,33 +240,33 @@ const NotificationBell = ({
                           />
                           <button
                             type="submit"
-                            className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-blue-50 ${
-                              notification.readAt ? "" : "bg-blue-50/40"
+                            className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50 ${
+                              notification.readAt ? "" : "bg-indigo-50/40"
                             }`}
                           >
                             <span
                               aria-hidden="true"
-                              className="mt-0.5 font-mono text-[10px] text-gray-400"
+                              className="mt-0.5 font-mono text-[10px] text-slate-400"
                             >
                               {typeIcons[notification.type] ?? "EVENT"}
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block text-sm text-gray-900">
+                              <span className="block text-sm text-slate-900">
                                 {notification.title}
                               </span>
                               {notification.body && (
-                                <span className="mt-0.5 block truncate text-xs text-gray-500">
+                                <span className="mt-0.5 block truncate text-xs text-slate-500">
                                   {notification.body}
                                 </span>
                               )}
-                              <span className="mt-1 block text-xs text-gray-400">
+                              <span className="mt-1 block text-xs text-slate-400">
                                 {formatRelativeTime(notification.createdAt)}
                               </span>
                             </span>
                             {!notification.readAt && (
                               <span
                                 aria-label="Unread"
-                                className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-blue-600"
+                                className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-indigo-600"
                               />
                             )}
                           </button>
@@ -279,11 +279,11 @@ const NotificationBell = ({
             </ul>
           )}
 
-          <div className="border-t border-gray-100 px-4 py-2">
+          <div className="border-t border-slate-100 px-4 py-2">
             <Link
               href="/notifications"
               onClick={closePanel}
-              className="block text-center text-sm font-medium text-blue-600 transition hover:text-blue-800"
+              className="block text-center text-sm font-medium text-indigo-600 transition hover:text-indigo-800"
             >
               View all notifications
             </Link>

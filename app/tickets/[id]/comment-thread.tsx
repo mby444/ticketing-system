@@ -57,7 +57,7 @@ const CommentThread = ({
 }) => {
   if (comments.length === 0) {
     return (
-      <p className="text-sm text-gray-500 border border-dashed border-gray-300 rounded p-4">
+      <p className="text-sm text-slate-500 border border-dashed border-slate-300 rounded p-4">
         {isClosed
           ? "No comments on this ticket."
           : "No comments yet — start the conversation below."}
@@ -82,22 +82,22 @@ const CommentThread = ({
             <div
               className={`max-w-[85%] rounded-lg border p-3 ${
                 removed
-                  ? "bg-gray-50 border-gray-200"
+                  ? "bg-slate-50 border-slate-200"
                   : staff
-                    ? "bg-blue-50 border-blue-200"
-                    : "bg-white border-gray-200"
+                    ? "bg-indigo-50 border-indigo-200"
+                    : "bg-white border-slate-200"
               }`}
             >
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-sm font-semibold text-gray-800">
+                <span className="text-sm font-semibold text-slate-900">
                   {comment.user.name ?? comment.user.email}
                 </span>
                 {staff && (
-                  <span className="text-xs uppercase tracking-wide bg-blue-600 text-white rounded px-1.5 py-0.5">
+                  <span className="text-xs uppercase tracking-wide bg-indigo-600 text-white rounded px-1.5 py-0.5">
                     Support Staff
                   </span>
                 )}
-                <time className="text-xs text-gray-400 ml-auto whitespace-nowrap">
+                <time className="text-xs text-slate-400 ml-auto whitespace-nowrap">
                   {new Date(comment.createdAt).toLocaleString()}
                 </time>
                 {canDelete && (
@@ -109,10 +109,10 @@ const CommentThread = ({
                 )}
               </div>
               {removed ? (
-                <p className="text-sm text-gray-400 italic">
+                <p className="text-sm text-slate-400 italic">
                   Comment removed
                   {comment.deletedBy && (
-                    <span className="text-gray-300">
+                    <span className="text-slate-300">
                       {" "}
                       by {comment.deletedBy.name ?? comment.deletedBy.email}
                     </span>
@@ -121,7 +121,7 @@ const CommentThread = ({
               ) : (
                 <>
                   {/* Rendered as text: React escapes it, so never use raw HTML here. */}
-                  <p className="text-sm text-gray-700 whitespace-pre-wrap break-words">
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">
                     {comment.body}
                   </p>
                   <div className="mt-2">

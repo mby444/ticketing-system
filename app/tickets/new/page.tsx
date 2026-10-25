@@ -5,7 +5,7 @@ const NewTicketPage = async () => {
   await requireUser();
 
   return (
-    <div className="min-h-screen bg-blue-50 flex items-center justify-center px-4">
+    <div className="min-h-screen bg-slate-50 p-8">
       <NewTicketForm />
     </div>
   );

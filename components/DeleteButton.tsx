@@ -112,7 +112,7 @@ const DeleteButton = ({
           aria-label={`Delete this ${itemLabel}`}
           aria-haspopup="dialog"
           aria-expanded={armed}
-          className={`absolute top-1.5 right-1.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full bg-black/50 text-white transition-all duration-200 hover:bg-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white ${
+          className={`absolute top-1.5 right-1.5 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-800/50 text-white transition-all duration-200 hover:bg-rose-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white ${
             armed ? "invisible opacity-0" : ""
           }`}
         >
@@ -129,7 +129,7 @@ const DeleteButton = ({
           // unfocusable for the first frame of the fade-in and silently drop
           // the focus() below.
           inert={!armed}
-          className={`absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded bg-black/75 p-2 text-center backdrop-blur-sm transition-all duration-200 ${
+          className={`absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded bg-slate-900/85 p-2 text-center backdrop-blur-sm transition-all duration-200 ${
             armed ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
         >
@@ -146,14 +146,14 @@ const DeleteButton = ({
               type="button"
               onClick={() => setArmed(false)}
               disabled={pending}
-              className="rounded bg-gray-700/80 px-1.5 py-1 text-[10px] font-medium text-gray-200 transition-all duration-200 hover:bg-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-60"
+              className="rounded bg-slate-700/80 px-1.5 py-1 text-[10px] font-medium text-slate-200 transition-all duration-200 hover:bg-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-60"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={pending}
-              className="rounded bg-red-600 px-1.5 py-1 text-[10px] font-medium text-white transition-all duration-200 hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-60"
+              className="rounded bg-rose-600 px-1.5 py-1 text-[10px] font-medium text-white transition-all duration-200 hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-60"
             >
               {pending ? "…" : "Delete"}
             </button>
@@ -173,7 +173,7 @@ const DeleteButton = ({
             console.log("Delete button 1 clicked");
           }}
           title={`Delete this ${itemLabel}`}
-          className={`text-gray-400 hover:text-red-600 transition text-xs px-1.5 py-0.5 rounded border border-gray-200 hover:border-red-300 bg-white`}
+          className={`text-slate-400 hover:text-rose-600 transition text-xs px-1.5 py-0.5 rounded border border-slate-200 hover:border-rose-300 bg-white`}
         >
           Delete
         </button>
@@ -195,7 +195,7 @@ const DeleteButton = ({
               console.log("cancel clicked");
             }}
             disabled={pending}
-            className="text-xs px-1.5 py-0.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-50 transition disabled:opacity-60"
+            className="text-xs px-1.5 py-0.5 rounded border border-slate-200 text-slate-600 hover:bg-slate-50 transition disabled:opacity-60"
           >
             Cancel
           </button>

@@ -96,7 +96,7 @@ const AttachmentGrid = ({
         const canDelete = canDeleteUserContent(viewer, attachment.uploadedBy.id);
 
         const badge = fromSupport && (
-          <span className="text-[10px] uppercase tracking-wide bg-blue-600 text-white rounded px-1 py-0.5 shrink-0 pointer-events-none">
+          <span className="text-[10px] uppercase tracking-wide bg-indigo-600 text-white rounded px-1 py-0.5 shrink-0 pointer-events-none">
             Support Staff
           </span>
         );
@@ -117,7 +117,7 @@ const AttachmentGrid = ({
               target="_blank"
               rel="noopener noreferrer"
               title={fromSupport ? `${attachment.fileName} — ${trace}` : attachment.fileName}
-              className={`block ${tileSize} rounded overflow-hidden border border-gray-200 hover:opacity-80 transition`}
+              className={`block ${tileSize} rounded overflow-hidden border border-slate-200 hover:opacity-80 transition`}
             >
               <Image
                 src={getThumbnailUrl(attachment)}
@@ -133,18 +133,18 @@ const AttachmentGrid = ({
         ) : (
           <div
             key={attachment.id}
-            className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded text-sm"
+            className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
           >
             <a
               href={attachment.url}
               target="_blank"
               rel="noopener noreferrer"
               title={fromSupport ? trace : attachment.fileName}
-              className="flex items-center gap-2 text-blue-600 hover:underline"
+              className="flex items-center gap-2 text-indigo-600 hover:underline"
             >
-              <FaFilePdf className="text-red-500 shrink-0" />
+              <FaFilePdf className="text-slate-500 shrink-0" />
               <span className="max-w-[10rem] truncate">{attachment.fileName}</span>
-              <span className="text-gray-400 text-xs whitespace-nowrap">
+              <span className="text-slate-400 text-xs whitespace-nowrap">
                 ({Math.max(1, Math.round(attachment.size / 1024))} KB)
               </span>
             </a>
