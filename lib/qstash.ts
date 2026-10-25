@@ -13,7 +13,12 @@ export type EmailJob =
   // One job per recipient, on purpose. A single job mailing two people would
   // duplicate the first email whenever a retry happened after it succeeded.
   | { type: "TICKET_ASSIGNED"; ticketId: number; assigneeId: string }
-  | { type: "TICKET_UNASSIGNED"; ticketId: number; previousAssigneeId: string };
+  | { type: "TICKET_UNASSIGNED"; ticketId: number; previousAssigneeId: string }
+  // Password reset is the one job with NO ticketId. It carries neither the code
+  // nor the address, only the two ids the worker needs to look both up: putting
+  // a live credential in the payload would put it in the broker, and the QStash
+  // dashboard retains message bodies.
+  | { type: "PASSWORD_RESET_OTP"; userId: string; otpId: string };
 
 /**
  * Payload published to QStash for asynchronous in-app notification creation.
@@ -69,7 +74,11 @@ export async function publishJob(
     });
     logEvent("Email job enqueued", "email", {
       type: job.type,
-      ticketId: job.ticketId,
+      // PASSWORD_RESET_OTP has no ticketId, so read the reference off the union
+      // instead of assuming every job is ticket-scoped.
+      ...("ticketId" in job
+        ? { ticketId: job.ticketId }
+        : { otpId: job.otpId }),
       messageId: result.messageId,
       deduplicationId: options?.deduplicationId,
     });

@@ -8,6 +8,8 @@ import { TicketCreatedEmail } from "@/emails/ticket-created";
 import { StatusUpdatedEmail } from "@/emails/status-updated";
 import { NewCommentEmail } from "@/emails/new-comment";
 import { TicketAssignedEmail } from "@/emails/ticket-assigned";
+import { PasswordResetOtpEmail } from "@/emails/password-reset";
+import { decryptOtp } from "@/lib/otp";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -42,6 +44,15 @@ const formatStatus = (status: string) => status.replace(/_/g, " ");
  * a retry can never duplicate the other recipient's email.
  */
 export async function sendJobEmail(job: EmailJob): Promise<void> {
+  // PASSWORD_RESET_OTP is the one ticketless job, so it is handled BEFORE the
+  // ticket lookup below. Putting the case inside the switch would read
+  // `job.ticketId` off a payload that has no such field, which is `undefined`
+  // at runtime and type-invalid at compile time.
+  if (job.type === "PASSWORD_RESET_OTP") {
+    await sendPasswordResetOtp(job);
+    return;
+  }
+
   const ticket = await prisma.ticket.findUnique({
     where: { id: job.ticketId },
     include: {
@@ -244,4 +255,82 @@ export async function sendJobEmail(job: EmailJob): Promise<void> {
     ticketId: ticket.id,
     to: recipient,
   });
+}
+
+/**
+ * Renders and sends the password-reset code.
+ *
+ * Resolves the address and the code from the database rather than the payload,
+ * so the credential never sits in the broker. Every "row is gone" case is a
+ * permanent no-op (200): a used, expired or already-swept code is exactly what
+ * a QStash retry looks like, and retrying it would re-send a dead credential.
+ *
+ * The code is decrypted here and nowhere else. `decryptOtp` returning null
+ * means the row predates an AUTH_SECRET rotation, which is also permanent —
+ * returning would let QStash retry five times against an unfixable row.
+ */
+async function sendPasswordResetOtp(job: {
+  userId: string;
+  otpId: string;
+}): Promise<void> {
+  const [user, otp] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: job.userId },
+      select: { id: true, email: true, name: true },
+    }),
+    prisma.passwordResetOtp.findUnique({ where: { id: job.otpId } }),
+  ]);
+
+  if (!user || !otp || otp.userId !== user.id) {
+    logEvent(
+      "Password reset email skipped: user or code no longer exists",
+      "email",
+      { otpId: job.otpId, userId: job.userId },
+      "warning",
+    );
+    return;
+  }
+
+  if (otp.expiresAt.getTime() < Date.now()) {
+    logEvent(
+      "Password reset email skipped: code expired before delivery",
+      "email",
+      { otpId: otp.id },
+      "warning",
+    );
+    return;
+  }
+
+  const code = decryptOtp(otp.codeEncrypted);
+  if (!code) {
+    logEvent(
+      "Password reset email skipped: code could not be decrypted",
+      "email",
+      { otpId: otp.id },
+      "warning",
+    );
+    return;
+  }
+
+  const { error } = await resend.emails.send({
+    from: senderAddress(),
+    to: user.email,
+    subject: "Your QuickTicket password reset code",
+    react: PasswordResetOtpEmail({
+      code,
+      expiresInMinutes: Math.max(
+        1,
+        Math.round((otp.expiresAt.getTime() - Date.now()) / 60000),
+      ),
+      resetUrl: `${process.env.APP_URL}/forgot-password?step=code`,
+    }),
+  });
+
+  if (error) {
+    throw new Error(`Resend send failed [${error.name}]: ${error.message}`);
+  }
+
+  // Metadata only — never the code, exactly as a comment body never reaches
+  // Sentry.
+  logEvent("Password reset email sent", "email", { otpId: otp.id });
 }

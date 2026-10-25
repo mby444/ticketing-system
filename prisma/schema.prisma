@@ -50,6 +50,36 @@ model User {
   deletedComments TicketComment[] @relation("CommentDeletedBy")
   commentAttachmentsUploaded CommentAttachment[] @relation("UploadedCommentAttachments")
   notifications Notification[]
+  passwordResetOtp PasswordResetOtp?
+}
+
+/**
+ * One row per user: the active password-reset code, if any.
+ *
+ * `userId` is @unique on purpose — requesting a new code REPLACES the old one
+ * rather than accumulating rows, so verification is a single findUnique and a
+ * used code cannot be replayed from a previous row. `attempts` is the
+ * brute-force ceiling (see OTP_MAX_ATTEMPTS) and `expiresAt` bounds how long a
+ * code stays live; the row is deleted outright on success, on expiry, and on
+ * exhausting its attempts.
+ *
+ * userId is CASCADE: an OTP is *for* a person and has no audit value, so
+ * deleting the user should take their outstanding codes with it.
+ */
+model PasswordResetOtp {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // AES-256-GCM ciphertext, NOT a hash. The QStash worker has to *recover* the
+  // code to render it into the email, which a one-way hash cannot allow. See
+  // lib/otp.ts for why that rules out bcrypt here.
+  codeEncrypted String
+  expiresAt     DateTime
+  attempts      Int       @default(0)
+  createdAt     DateTime  @default(now())
+
+  // Sweeping expired rows is a single indexed delete rather than a full scan.
+  @@index([expiresAt])
 }
 
 enum NotificationType {

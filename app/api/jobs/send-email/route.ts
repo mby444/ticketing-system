@@ -12,22 +12,38 @@ const receiver = new Receiver({
  * Shape check for an already-authenticated payload. Anything unexpected
  * (unknown type, wrong field types) is a permanent error — acknowledging it
  * with 200 keeps QStash from retrying a message that can never succeed.
+ *
+ * The switch is on `type` FIRST, with the field checks inside each arm. An
+ * earlier version checked `typeof job.ticketId === "number"` before the switch,
+ * which silently excluded every ticketless job — PASSWORD_RESET_OTP has no
+ * ticket and was rejected as malformed before the worker ever saw it.
+ *
+ * Exported so the contract can be locked down in a test. A shape check that
+ * rejects a valid payload fails *silently*: QStash gets a 200, nothing is sent,
+ * and the only symptom is a code that never arrives.
  */
-function isValidJob(value: unknown): value is EmailJob {
+export function isValidJob(value: unknown): value is EmailJob {
   if (typeof value !== "object" || value === null) return false;
   const job = value as Record<string, unknown>;
-  if (typeof job.ticketId !== "number") return false;
+
   switch (job.type) {
     case "TICKET_CREATED":
-      return true;
+      return typeof job.ticketId === "number";
     case "STATUS_UPDATED":
-      return typeof job.newStatus === "string";
+      return typeof job.ticketId === "number" && typeof job.newStatus === "string";
     case "NEW_COMMENT":
-      return typeof job.commentId === "number";
+      return typeof job.ticketId === "number" && typeof job.commentId === "number";
     case "TICKET_ASSIGNED":
-      return typeof job.assigneeId === "string";
+      return typeof job.ticketId === "number" && typeof job.assigneeId === "string";
     case "TICKET_UNASSIGNED":
-      return typeof job.previousAssigneeId === "string";
+      return (
+        typeof job.ticketId === "number" &&
+        typeof job.previousAssigneeId === "string"
+      );
+    case "PASSWORD_RESET_OTP":
+      // Deliberately no ticketId, and deliberately no code: the worker reads
+      // both the address and the credential from the database.
+      return typeof job.userId === "string" && typeof job.otpId === "string";
     default:
       return false;
   }
@@ -86,18 +102,22 @@ export async function POST(request: Request) {
     return new Response("Unknown event", { status: 200 });
   }
 
+  // `ticketId` is absent on PASSWORD_RESET_OTP, so the log carries whichever
+  // identifiers the job actually has.
+  const jobRef =
+    payload.type === "PASSWORD_RESET_OTP"
+      ? { userId: payload.userId, otpId: payload.otpId }
+      : { ticketId: payload.ticketId };
+
   try {
     await sendJobEmail(payload);
-    logEvent("Email job processed", "email", {
-      type: payload.type,
-      ticketId: payload.ticketId,
-    });
+    logEvent("Email job processed", "email", { type: payload.type, ...jobRef });
     return new Response("OK", { status: 200 });
   } catch (error) {
     logEvent(
       "Email job failed — QStash will retry",
       "email",
-      { type: payload.type, ticketId: payload.ticketId },
+      { type: payload.type, ...jobRef },
       "error",
       error,
     );

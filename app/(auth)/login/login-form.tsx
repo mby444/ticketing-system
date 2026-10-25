@@ -2,11 +2,16 @@
 
 import { useActionState, useEffect } from 'react';
 import { toast } from 'sonner';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { loginUser } from '@/actions/auth.actions';
 
 const LoginForm = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Set by the reset flow on success. A query param rather than session state:
+  // it survives the redirect and works without JS reading anything.
+  const justReset = searchParams.get('reset') === '1';
 
   const initialState = {
     success: false,
@@ -31,6 +36,12 @@ const LoginForm = () => {
           Login
         </h1>
 
+        {justReset && (
+          <p className='mb-4 rounded border border-green-200 bg-green-50 text-green-800 text-sm p-3'>
+            Your password has been reset. Sign in with your new password.
+          </p>
+        )}
+
         <form action={formAction} className='space-y-4 text-gray-700'>
           <input
             className='w-full border border-gray-200 p-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-400'
@@ -54,6 +65,13 @@ const LoginForm = () => {
           >
             Login
           </button>
+
+          <Link
+            href='/forgot-password'
+            className='block text-center text-sm text-blue-600 hover:underline'
+          >
+            Forgot your password?
+          </Link>
         </form>
       </div>
     </div>

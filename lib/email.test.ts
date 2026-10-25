@@ -24,6 +24,7 @@ vi.mock("resend", () => ({
 }));
 
 import { sendJobEmail } from "@/lib/email";
+import { encryptOtp } from "@/lib/otp";
 
 const OWNER = { id: "owner-1", email: "owner@example.com" };
 
@@ -245,5 +246,121 @@ describe("sendJobEmail — permanent failures", () => {
     await expect(sendJobEmail({ type: "TICKET_CREATED", ticketId: 72 })).rejects.toThrow(
       /Resend send failed \[validation_error\]/,
     );
+  });
+});
+
+describe("sendJobEmail — PASSWORD_RESET_OTP", () => {
+  const OTP_USER = { id: "user-1", email: "user1@example.com", name: "User One" };
+  const CODE = "123456";
+
+  const otpJob = { type: "PASSWORD_RESET_OTP" as const, userId: "user-1", otpId: "otp-1" };
+
+  const liveOtp = (over: Record<string, unknown> = {}) => ({
+    id: "otp-1",
+    userId: "user-1",
+    codeEncrypted: encryptOtp(CODE)!,
+    expiresAt: new Date(Date.now() + 10 * 60_000),
+    attempts: 0,
+    ...over,
+  });
+
+  it("sends the code to the address the payload resolves to", async () => {
+    prisma.user.findUnique.mockResolvedValue(OTP_USER);
+    prisma.passwordResetOtp.findUnique.mockResolvedValue(liveOtp());
+
+    await sendJobEmail(otpJob);
+    expect(recipient()).toBe(OTP_USER.email);
+  });
+
+  it("never looks up a ticket", async () => {
+    // The job has no ticketId. A ticket lookup here would read `undefined` and,
+    // under the old isValidJob shape, the message would have been rejected as
+    // malformed before it ever arrived here.
+    prisma.user.findUnique.mockResolvedValue(OTP_USER);
+    prisma.passwordResetOtp.findUnique.mockResolvedValue(liveOtp());
+
+    await sendJobEmail(otpJob);
+    expect(prisma.ticket.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("renders the decrypted code into the email", async () => {
+    prisma.user.findUnique.mockResolvedValue(OTP_USER);
+    prisma.passwordResetOtp.findUnique.mockResolvedValue(liveOtp());
+
+    await sendJobEmail(otpJob);
+    const [arg] = send.mock.calls[0] as [{ react: unknown }];
+    // Walking the tree is what proves the recovered code reached the template;
+    // asserting on the element's props alone would not catch a template that
+    // ignored it.
+    expect(JSON.stringify(arg.react)).toContain(CODE);
+  });
+
+  it("acknowledges silently when the code row is gone", async () => {
+    // This is exactly what a used or swept code looks like on a QStash retry.
+    // Retrying would re-send a dead credential five times.
+    prisma.user.findUnique.mockResolvedValue(OTP_USER);
+    prisma.passwordResetOtp.findUnique.mockResolvedValue(null);
+
+    await sendJobEmail(otpJob);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges silently when the user is gone", async () => {
+    prisma.user.findUnique.mockResolvedValue(null);
+    prisma.passwordResetOtp.findUnique.mockResolvedValue(liveOtp());
+
+    await sendJobEmail(otpJob);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("refuses a row belonging to a different user", async () => {
+    // Guards against a payload that pairs one user's id with another's code.
+    prisma.user.findUnique.mockResolvedValue(OTP_USER);
+    prisma.passwordResetOtp.findUnique.mockResolvedValue(liveOtp({ userId: "user-2" }));
+
+    await sendJobEmail(otpJob);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges silently when the code expired before delivery", async () => {
+    // A dead code emailed to a waiting user is worse than silence.
+    prisma.user.findUnique.mockResolvedValue(OTP_USER);
+    prisma.passwordResetOtp.findUnique.mockResolvedValue(
+      liveOtp({ expiresAt: new Date(Date.now() - 1_000) }),
+    );
+
+    await sendJobEmail(otpJob);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges silently when the code cannot be decrypted", async () => {
+    // A row from before an AUTH_SECRET rotation. Permanent, so returning rather
+    // than throwing stops QStash retrying five times against an unfixable row.
+    prisma.user.findUnique.mockResolvedValue(OTP_USER);
+    prisma.passwordResetOtp.findUnique.mockResolvedValue(
+      liveOtp({ codeEncrypted: "iv:tag:data" }),
+    );
+
+    await sendJobEmail(otpJob);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("never logs the code", async () => {
+    prisma.user.findUnique.mockResolvedValue(OTP_USER);
+    prisma.passwordResetOtp.findUnique.mockResolvedValue(liveOtp());
+
+    await sendJobEmail(otpJob);
+    expect(JSON.stringify(logEvent.mock.calls)).not.toContain(CODE);
+  });
+
+  it("throws when Resend rejects it, so QStash retries", async () => {
+    prisma.user.findUnique.mockResolvedValue(OTP_USER);
+    prisma.passwordResetOtp.findUnique.mockResolvedValue(liveOtp());
+    send.mockResolvedValue({
+      data: null,
+      error: { name: "validation_error", message: "Invalid `to` field" },
+    });
+
+    await expect(sendJobEmail(otpJob)).rejects.toThrow(/validation_error/);
   });
 });

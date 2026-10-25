@@ -41,6 +41,19 @@ export const createPrismaMock = () => {
     // Added with comment attachments. `createMany` is called inside the
     // addTicketComment transaction, `findUnique`/`delete` by
     // deleteCommentAttachment.
+    // Added with password reset. `upsert` replaces the row for a user (the
+    // schema is unique on userId), `findUnique` verifies, and `update` is how a
+    // wrong guess burns one attempt.
+    passwordResetOtp: {
+      findUnique: vi.fn(),
+      findMany: vi.fn(),
+      create: vi.fn(),
+      upsert: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
+    },
     commentAttachment: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
@@ -63,6 +76,15 @@ export const createPrismaMock = () => {
     user: {
       findUnique: vi.fn(),
       findMany: vi.fn(),
+      // `create` for registerUser, `update` for the password reset writing a new
+      // hash. Both were missing while the actions already called them — the
+      // surface is only as good as its last audit against real call sites, which
+      // is what test-utils/safety-rail.test.ts exists to keep honest.
+      create: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
     },
   };
 
