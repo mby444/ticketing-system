@@ -50,8 +50,8 @@ Not a monorepo. No CI, no pre-commit hooks, no test coverage tooling.
 **Verification chain: `lint` → `test` → `tsc --noEmit` → `build`.** All four must pass before a
 change is considered done.
 
-**Current baseline (2026-10-10):** all four green. Tests: **353 across 17 files** in ~4 s.
-Working tree clean at `da94165`.
+**Current baseline (2026-10-25):** all four green. Tests: **431 across 20 files** in ~2 s.
+Working tree clean at `da94165` plus the uncommitted password-reset work.
 
 > After `prisma generate`, **restart `next dev`**. Turbopack does not pick up the regenerated
 > client in `generated/prisma`; a stale client makes `getCurrentUser()` throw inside a catch that
@@ -64,13 +64,14 @@ Working tree clean at `da94165`.
 ```
 app/                     routes
   (auth)/login|register  auth pages (client forms + server actions)
+  (auth)/forgot-password two-step OTP reset (request code, then code + new password)
   tickets/               list, new, [id] detail (thread, attachments, assign)
   dashboard/             staff-only triage view
   notifications/         full in-app notification history
   api/jobs/              QStash worker endpoints (send-email, create-notification)
 actions/                 every server action ("use server")
   ticket.actions.ts      13 actions — the app's entire data API
-  auth.actions.ts        register / login / logout
+  auth.actions.ts        register / login / logout / requestPasswordResetOtp / resetPassword
   notification.actions.ts bell panel data + read mutations
 lib/                     domain logic (see §5)
 components/              shared UI (Navbar, bell, tables, selects, delete button…)
@@ -112,10 +113,14 @@ User ──< Ticket (owner)            userId        no onDelete
      ──< TicketAttachment          uploadedBy   RESTRICT (audit data)
      ──< CommentAttachment         uploadedBy   RESTRICT (audit data)
      ──< Notification              user         Cascade
+     ──< PasswordResetOtp          user         Cascade (one active row per user, unique on userId)
 ```
 
 Enums: `Role` (CLIENT / ADMIN / SUPPORT_AGENT), `TicketStatus` (Open / In_Progress / Resolved /
 Closed), `TicketPriority` (Low / Medium / High / Critical), `NotificationType` (5 values).
+`PasswordResetOtp` stores an **encrypted** code (AES-256-GCM, key from `AUTH_SECRET` via HKDF) —
+not a hash — because the worker must *recover* it to render the email. One row per user
+(unique on `userId`), upserted on request, deleted on success/expiry/exhaustion.
 
 **The delete semantics are deliberate and load-bearing — do not "simplify" them:**
 
@@ -154,6 +159,8 @@ makes it testable without a database or a request context.
 | `lib/dashboard-sort.ts` | `?sort=` whitelist + comparator, total order, non-mutating |
 | `lib/priority.ts` | `PRIORITY_OPTIONS` — hand-written, `satisfies readonly TicketPriority[]` |
 | `lib/attachment-limits.ts` | MIME/size/count limits, importable without pulling the Cloudinary SDK |
+| `lib/otp.ts` | OTP generation, AES-256-GCM encrypt/decrypt, constant-time compare (pure, `node:crypto` only) |
+| `lib/password.ts` | shared password policy (min 8, max 72 bytes) used by register and reset |
 
 ### The two "never import me from a client component" modules
 
@@ -262,7 +269,7 @@ time to concrete user ids; the worker is a dumb writer.
 
 ## 8. Testing
 
-**353 tests / 17 files, ~4 seconds, no database and no network.**
+**431 tests / 20 files, ~2 seconds, no database and no network.**
 
 Strategy: mock `@/lib/prisma` rather than run Postgres. The bug class this repo actually produces —
 authorization decisions, validation branches, no-op guards, `revalidatePath` targets, notification
@@ -271,6 +278,8 @@ recipient resolution, published job payloads — is covered in milliseconds with
 | File | Covers |
 |---|---|
 | `actions/ticket.actions.test.ts` | `addTicketComment` (validation, full role/closed matrix, upload + transaction paths), `assignTicket`, `createTicket`, both delete actions |
+| `actions/auth.actions.test.ts` | reset flow: no enumeration (message + timing + publish), attempt ceiling, expiry, single use, no session issued, credential hygiene |
+| `app/route-shape.test.ts` | `isValidJob` shape gate, incl. the ticketless `PASSWORD_RESET_OTP` case |
 | `lib/email.test.ts` | recipient resolution for every job type, "notify nobody" rules, Resend error → throw so QStash retries |
 | `lib/notifications.test.ts` | in-app recipient matrix, content, dedupe keys |
 | `lib/dashboard-sort.test.ts` | total order, non-mutation, nulls-last in both directions, numeric collation |
@@ -352,6 +361,7 @@ never touch real uploads in `quickticket/tickets`.
 | `CLOUDINARY_CLOUD_NAME` / `_API_KEY` / `_API_SECRET` | ticket + comment attachments |
 | `QSTASH_URL` / `_TOKEN` / `_CURRENT_SIGNING_KEY` / `_NEXT_SIGNING_KEY` | worker queue + HMAC verification (both keys, so rotation is safe) |
 | `RESEND_API_KEY` / `EMAIL_FROM` / `APP_URL` | email delivery; `APP_URL` must be reachable by QStash (use an ngrok tunnel while testing locally) |
+| `OTP_DEV_REVEAL` | dev-only OTP echo on screen (`1` + `NODE_ENV !== production`); Resend testing mode only delivers to the account owner |
 
 Sentry's DSN is hardcoded in `sentry.*.config.ts`. Resend's `onboarding@resend.dev` only delivers
 to the Resend account owner's address — a verified domain is required for real use.
@@ -371,6 +381,9 @@ Scoped out deliberately, not regressions. Full lists with rationale live in `AGE
 - **Notifications:** server-rendered count refreshed on mutation — no polling, so a badge can go
   stale; a staff comment on someone else's ticket generates two emails (comment + status) by
   design.
+- **Auth:** no throttle on *requesting* a reset code (bounds guessing, not sending); existing
+  sessions are not revoked by a reset (stateless JWT, no session table); no in-app role
+  management. See the Auth backlog in `AGENTS.md`.
 - **Ops:** no CI running the test suite; `getTicketById` swallows errors as `404`, so a failing
   sub-query takes down the whole detail page.
 
@@ -385,7 +398,7 @@ Scoped out deliberately, not regressions. Full lists with rationale live in `AGE
 - `generated/` is gitignored — run `npx.cmd prisma generate` after a fresh clone or a schema
   change, and restart the dev server afterwards.
 - Several migrations are **hand-written** (`20260925000000_add_rbac`, the `TicketPriority` enum,
-  `uploadedById` backfill, `CommentAttachment`, `Notification`). `migrate dev` is non-interactive in
-  this environment, and some of these changes (text→enum column conversion, adding `NOT NULL` to a
-  populated table) would be generated destructively or would fail outright. Verify drift with
-  `migrate diff --exit-code` after any hand-written migration.
+  `uploadedById` backfill, `CommentAttachment`, `Notification`, `PasswordResetOtp`). `migrate dev`
+  is non-interactive in this environment, and some of these changes (text→enum column conversion,
+  adding `NOT NULL` to a populated table) would be generated destructively or would fail outright.
+  Verify drift with `migrate diff --exit-code` after any hand-written migration.

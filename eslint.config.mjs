@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Skill tooling (auto-generated CommonJS scripts) is not app code and
+    // legitimately uses require(); linting it only breaks the verification
+    // chain without catching anything useful.
+    ".opencode/**",
   ]),
 ]);
 
