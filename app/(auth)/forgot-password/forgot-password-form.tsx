@@ -9,29 +9,11 @@ import {
   resetPassword,
 } from '@/actions/auth.actions';
 
-// Typed from the action's own state shape rather than a bare literal: the
-// literal narrows to `{ success, message }` and `devCode` stops existing.
 const initialState: { success: boolean; message: string; devCode?: string } = {
   success: false,
   message: '',
 };
 
-/**
- * Two steps in one component: request the code, then enter it.
- *
- * The email typed in step one is carried into step two as a hidden field rather
- * than a userId, because the request action deliberately does not tell the
- * client whether an account exists — handing back an id would undo that.
- * Sending back the address the visitor just typed leaks nothing they did not
- * already know.
- *
- * The step is DERIVED from the action's state rather than stored. Keeping it in
- * a `useState` and advancing it from an effect trips
- * `react-hooks/set-state-in-effect` — and rightly so, since the value is
- * already computable. `dismissed` is the only real state here: it records that
- * the visitor asked to go back and edit the address, which the action state
- * cannot express.
- */
 const ForgotPasswordForm = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -62,8 +44,6 @@ const ForgotPasswordForm = () => {
   useEffect(() => {
     if (resetState.success) {
       toast.success(resetState.message);
-      // The reset deliberately issues no session: the auth cookie is a
-      // stateless JWT with no server-side table, so there is nothing to revoke.
       router.push('/login?reset=1');
     } else if (resetState.message) {
       toast.error(resetState.message);
@@ -71,108 +51,184 @@ const ForgotPasswordForm = () => {
   }, [resetState, router]);
 
   return (
-    <div className='min-h-screen flex items-center justify-center bg-blue-50 px-4'>
-      <div className='w-full max-w-md bg-white shadow-md rounded-lg p-8 border border-gray-200'>
-        <h1 className='text-3xl font-bold mb-2 text-center text-blue-600'>
-          {step === 'request' ? 'Forgot password' : 'Choose a new password'}
-        </h1>
-        <p className='text-sm text-gray-500 text-center mb-6'>
-          {step === 'request'
-            ? linkedFromEmail
-              ? 'Enter the 6-digit code we emailed you.'
-              : 'We will email you a 6-digit code to confirm it is you.'
-            : `Enter the code we sent to ${email || 'your address'}.`}
-        </p>
+    <div className="flex min-h-screen items-center justify-center bg-surface px-4 py-12">
+      <div className="w-full max-w-md">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-600 text-lg font-bold text-white shadow-sm">
+            Q
+          </div>
+          <h1 className="text-headline-md text-slate-900">
+            {step === 'request' ? 'Forgot password' : 'Choose a new password'}
+          </h1>
+          <p className="mt-1 text-body-md text-slate-500">
+            {step === 'request'
+              ? linkedFromEmail
+                ? 'Enter the 6-digit code we emailed you.'
+                : 'We will email you a 6-digit code to confirm it is you.'
+              : `Enter the code we sent to ${email || 'your address'}.`}
+          </p>
+        </div>
 
-        {step === 'request' ? (
-          <form
-            action={requestAction}
-            className='space-y-4 text-gray-700'
-            // Clearing `dismissed` here rather than in an effect: a fresh
-            // request must be able to advance the step again after the visitor
-            // backed out of it.
-            onSubmit={() => setDismissed(false)}
-          >
-            <input
-              className='w-full border border-gray-200 p-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-400'
-              type='email'
-              name='email'
-              placeholder='Your Email'
-              autoComplete='email'
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <button
-              className='w-full bg-blue-600 text-white p-3 rounded hover:bg-blue-700 transition disabled:opacity-50'
-              type='submit'
-              disabled={requestPending}
+        <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-card">
+          {step === 'request' ? (
+            <form
+              action={requestAction}
+              className="space-y-4"
+              onSubmit={() => setDismissed(false)}
             >
-              {requestPending ? 'Sending…' : 'Send code'}
-            </button>
-          </form>
-        ) : (
-          <form action={resetAction} className='space-y-4 text-gray-700'>
-            <input type='hidden' name='email' value={email} />
-
-            {requestState.devCode && (
-              <div className='border border-dashed border-amber-400 bg-amber-50 text-amber-900 rounded p-3 text-sm'>
-                <p className='font-semibold'>Dev only — code not emailed</p>
-                <p className='font-mono text-lg tracking-widest'>
-                  {requestState.devCode}
-                </p>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Email
+                </label>
+                <input
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  type="email"
+                  name="email"
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
               </div>
-            )}
+              <button
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                type="submit"
+                disabled={requestPending}
+              >
+                {requestPending && (
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                    />
+                  </svg>
+                )}
+                {requestPending ? 'Sending…' : 'Send code'}
+              </button>
+            </form>
+          ) : (
+            <form action={resetAction} className="space-y-4">
+              <input type="hidden" name="email" value={email} />
 
-            <input
-              className='w-full border border-gray-200 p-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-400 text-center tracking-widest'
-              type='text'
-              name='code'
-              placeholder='000000'
-              inputMode='numeric'
-              autoComplete='one-time-code'
-              maxLength={6}
-              required
-            />
-            <input
-              className='w-full border border-gray-200 p-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-400'
-              type='password'
-              name='password'
-              placeholder='New password'
-              autoComplete='new-password'
-              required
-            />
-            <input
-              className='w-full border border-gray-200 p-3 rounded focus:outline-none focus:ring-2 focus:ring-blue-400'
-              type='password'
-              name='confirmPassword'
-              placeholder='Confirm new password'
-              autoComplete='new-password'
-              required
-            />
-            <button
-              className='w-full bg-blue-600 text-white p-3 rounded hover:bg-blue-700 transition disabled:opacity-50'
-              type='submit'
-              disabled={resetPending}
-            >
-              {resetPending ? 'Resetting…' : 'Reset password'}
-            </button>
-            <button
-              type='button'
-              onClick={() => setDismissed(true)}
-              className='w-full text-sm text-blue-600 hover:underline'
-            >
-              Use a different email
-            </button>
-          </form>
-        )}
+              {requestState.devCode && (
+                <div className="rounded-lg border border-dashed border-amber-400 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p className="font-semibold">Dev only — code not emailed</p>
+                  <p className="mt-1 font-mono text-lg tracking-widest">
+                    {requestState.devCode}
+                  </p>
+                </div>
+              )}
 
-        <Link
-          href='/login'
-          className='block text-center text-sm text-blue-600 hover:underline mt-6'
-        >
-          Back to login
-        </Link>
+              {resetState.message && !resetState.success && (
+                <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                  {resetState.message}
+                </div>
+              )}
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  6-digit code
+                </label>
+                <input
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-center tracking-widest text-slate-900 placeholder:text-slate-400 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  type="text"
+                  name="code"
+                  placeholder="000000"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  New password
+                </label>
+                <input
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  type="password"
+                  name="password"
+                  placeholder="At least 8 characters"
+                  autoComplete="new-password"
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                  Confirm password
+                </label>
+                <input
+                  className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  type="password"
+                  name="confirmPassword"
+                  placeholder="Repeat password"
+                  autoComplete="new-password"
+                  required
+                />
+              </div>
+              <button
+                className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                type="submit"
+                disabled={resetPending}
+              >
+                {resetPending && (
+                  <svg
+                    className="h-4 w-4 animate-spin"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                    />
+                  </svg>
+                )}
+                {resetPending ? 'Resetting…' : 'Reset password'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDismissed(true)}
+                className="w-full text-sm font-medium text-indigo-600 transition hover:text-indigo-700"
+              >
+                Use a different email
+              </button>
+            </form>
+          )}
+        </div>
+
+        <p className="mt-6 text-center text-sm text-slate-500">
+          <Link
+            href="/login"
+            className="font-medium text-indigo-600 transition hover:text-indigo-700"
+          >
+            Back to login
+          </Link>
+        </p>
       </div>
     </div>
   );

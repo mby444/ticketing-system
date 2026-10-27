@@ -29,12 +29,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} ${geistMono.variable} antialiased`}
+        className={`${inter.variable} ${geistMono.variable} antialiased bg-surface text-on-surface`}
         cz-shortcut-listen="true"
       >
         <Navbar />
-        {children}
-        <Toaster position="top-center" />
+        <main className="min-h-[calc(100vh-64px)]">{children}</main>
+        <Toaster position="top-center" richColors />
       </body>
     </html>
   );

@@ -169,7 +169,7 @@ const NotificationBell = ({
         {unreadCount > 0 && (
           <span
             aria-hidden="true"
-            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white"
+            className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white animate-pulse-subtle"
           >
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
@@ -181,7 +181,7 @@ const NotificationBell = ({
           ref={panelRef}
           role="dialog"
           aria-labelledby={headingId}
-          className="absolute right-0 z-50 mt-2 w-96 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
+          className="absolute right-0 z-50 mt-2 w-96 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-popover"
         >
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <h2

@@ -12,41 +12,35 @@ const TicketItem = ({ ticket }: TicketItemProps) => {
 
   return (
     <div
-      key={ticket.id}
-      className={`flex justify-between items-center bg-white shadow-sm rounded-xl border border-slate-200 p-6 hover:border-slate-300 transition-all duration-200 ${
-        isClosed ? "opacity-50" : ""
+      className={`bg-surface-container-lowest shadow-card rounded-xl border border-slate-200 p-6 hover:border-slate-300 hover:shadow-elevated transition-all duration-200 ${
+        isClosed ? "opacity-60" : ""
       }`}
     >
-      {/* Left Side */}
-      <div>
-        <h2 className="text-xl font-bold text-slate-900">
-          {ticket.subject}
-        </h2>
-      </div>
-      {/* Right Side */}
-      <div className="text-right space-y-2">
-        <div className="text-sm text-slate-500">
-          Priority:{" "}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex-1 min-w-0">
+          <h2 className="text-title-md text-slate-900 truncate">
+            {ticket.subject}
+          </h2>
+          <p className="text-label-sm text-slate-500 mt-1">#{ticket.id}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           <span className={getPriorityClass(ticket.priority)}>
             {ticket.priority}
           </span>
-        </div>
-        <div className="text-sm text-slate-500">
-          Status:{" "}
           <span className={getStatusClass(ticket.status)}>
             {formatStatus(ticket.status)}
           </span>
+          <Link
+            href={`/tickets/${ticket.id}`}
+            className={`inline-block text-label-md font-medium px-3 py-1.5 rounded-lg shadow-sm transition text-center ${
+              isClosed
+                ? "bg-slate-200 text-slate-500 cursor-not-allowed pointer-events-none"
+                : "bg-primary-container text-on-primary hover:bg-primary-hover"
+            }`}
+          >
+            View Ticket
+          </Link>
         </div>
-        <Link
-          href={`/tickets/${ticket.id}`}
-          className={`inline-block mt-2 text-sm font-medium px-3 py-2 rounded-lg shadow-sm transition text-center ${
-            isClosed
-              ? "bg-slate-400 text-slate-600 cursor-not-allowed pointer-events-none"
-              : "bg-indigo-600 text-white hover:bg-indigo-700 "
-          }`}
-        >
-          View Ticket
-        </Link>
       </div>
     </div>
   );
