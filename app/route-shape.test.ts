@@ -14,7 +14,7 @@ vi.mock("@upstash/qstash", () => ({ Receiver: vi.fn(function () { return { verif
 vi.mock("@/lib/email", () => ({ sendJobEmail: vi.fn() }));
 vi.mock("@/utils/sentry", () => ({ logEvent: vi.fn() }));
 
-import { isValidJob } from "@/app/api/jobs/send-email/route";
+import { isValidJob } from "@/lib/qstash";
 
 describe("isValidJob — ticketless jobs", () => {
   it("accepts PASSWORD_RESET_OTP", () => {
