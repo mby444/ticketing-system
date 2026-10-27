@@ -167,3 +167,17 @@ Do not treat these as bugs; they were scoped out when the comment system shipped
 8. **Moderation and soft delete shipped (2026-09-29); the audit trail did not.** `deletedAt` + `deletedById` record *that* a comment was removed and *by whom*, and staff can now moderate any comment — but there is still **no DB audit trail** of removals: nothing queries "who deleted what, when" across tickets, and the Sentry `logEvent` line is the only other trace. **Edit is still missing**, so a corrected comment can only be removed and re-posted, which reads as two separate messages in the thread.
 9. The auto status bump only fires for `Open` → `In_Progress` on a staff reply. There are no other transition rules: a client can never move a ticket, staff can still set any status, and `Resolved`/`Closed` are not reopened by commenting (commenting on a `Closed` ticket is rejected outright).
 10. ~~`prisma/seed.ts` seeds **no** comments~~ — **DONE (2026-10-03)**, jointly with attachment backlog #5: 284 comments across 133 tickets, always starting with the ticket owner's opening message, never with a staff reply on an `Open` ticket (that state is unreachable because of the auto-bump), and with 3 seeded already-removed so the `[removed]` rendering is visible without manual setup. The `ticket.deleteMany()` → `user.deleteMany()` order is unchanged and still load-bearing — see the seed entries under Known state.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
+
+Rules:
+- When graphify-out/graph.json exists, run `graphify query "<question>"` before your first grep, search or source-file read for a codebase question, and put this rule in every subagent prompt that explores code. Read raw files only for lines the graph or an earlier read already located. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- A committed graphify-out/graph.json is rewritten whole on every build, so a large diff to it in a pull request is expected. Do not flag it as churn or suggest skipping the graph rebuild or its hooks.

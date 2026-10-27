@@ -22,7 +22,9 @@ export type NotificationView = {
  * throwing, because the Navbar renders for logged-out visitors too and must not
  * blow up the whole layout over a bell that has nothing to show.
  */
-export async function getNotifications(limit = 20): Promise<NotificationView[]> {
+export async function getNotifications(
+  limit = 20,
+): Promise<NotificationView[]> {
   const user = await getCurrentUser();
   if (!user) return [];
 

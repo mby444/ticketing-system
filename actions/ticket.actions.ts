@@ -12,9 +12,12 @@ import {
   type AttachmentUpload,
 } from "@/lib/cloudinary";
 import { prisma } from "@/lib/prisma";
-import { publishJob, publishNotificationJob } from "@/lib/qstash";
+import { publishJob } from "@/lib/qstash";
 import { buildAssignmentNotifications } from "@/lib/assignment-notifications";
-import { buildNotificationJobs } from "@/lib/notifications";
+import {
+  buildNotificationJobs,
+  createNotifications,
+} from "@/lib/notifications";
 import { isTicketPriority } from "@/lib/priority";
 import { canDeleteUserContent } from "@/lib/delete-permissions";
 import { logEvent } from "@/utils/sentry";
@@ -67,7 +70,9 @@ export const createTicket = async (
     // Collect attachment files (optional — zero files is fine).
     const files = formData
       .getAll("attachments")
-      .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+      .filter(
+        (entry): entry is File => entry instanceof File && entry.size > 0,
+      );
 
     if (files.length > MAX_FILES) {
       logEvent(
@@ -110,7 +115,9 @@ export const createTicket = async (
           error,
         );
         await Promise.all(
-          uploaded.map((asset) => destroyAsset(asset.publicId, asset.resourceType)),
+          uploaded.map((asset) =>
+            destroyAsset(asset.publicId, asset.resourceType),
+          ),
         );
         return {
           success: false,
@@ -146,7 +153,9 @@ export const createTicket = async (
         error,
       );
       await Promise.all(
-        uploaded.map((asset) => destroyAsset(asset.publicId, asset.resourceType)),
+        uploaded.map((asset) =>
+          destroyAsset(asset.publicId, asset.resourceType),
+        ),
       );
       return { success: false, message: "Failed to create ticket" };
     }
@@ -180,14 +189,17 @@ export const createTicket = async (
     const notificationJobs = buildNotificationJobs(
       { type: "TICKET_CREATED", ticketId: ticket.id },
       {
-        ticket: { id: ticket.id, userId: ticket.userId, assigneeId: null, subject: ticket.subject },
+        ticket: {
+          id: ticket.id,
+          userId: ticket.userId,
+          assigneeId: null,
+          subject: ticket.subject,
+        },
         actor: { id: user.id, role: user.role },
         staffIds,
       },
     );
-    for (const job of notificationJobs) {
-      await publishNotificationJob(job);
-    }
+    await createNotifications(notificationJobs);
 
     return {
       success: true,
@@ -538,14 +550,17 @@ export const updateTicketStatus = async (
       const notificationJobs = buildNotificationJobs(
         { type: "STATUS_UPDATED", ticketId, newStatus: status },
         {
-          ticket: { id: ticket.id, userId: ticket.userId, assigneeId: ticket.assigneeId, subject: ticket.subject },
+          ticket: {
+            id: ticket.id,
+            userId: ticket.userId,
+            assigneeId: ticket.assigneeId,
+            subject: ticket.subject,
+          },
           actor: { id: user.id, role: user.role },
           staffIds,
         },
       );
-      for (const job of notificationJobs) {
-        await publishNotificationJob(job);
-      }
+      await createNotifications(notificationJobs);
     }
 
     return { success: true, message: "Ticket status updated" };
@@ -611,7 +626,12 @@ export const assignTicket = async (
     });
 
     if (!ticket) {
-      logEvent(`Ticket ${ticketId} not found`, "ticket", { ticketId }, "warning");
+      logEvent(
+        `Ticket ${ticketId} not found`,
+        "ticket",
+        { ticketId },
+        "warning",
+      );
       return { success: false, message: "Ticket not found" };
     }
 
@@ -700,13 +720,15 @@ export const assignTicket = async (
               staffIds,
             },
           );
-          for (const job of jobs) {
-            await publishNotificationJob(job);
-          }
+          await createNotifications(jobs);
         }
         if (ticket.assigneeId) {
           const jobs = buildNotificationJobs(
-            { type: "TICKET_UNASSIGNED", ticketId, previousAssigneeId: ticket.assigneeId },
+            {
+              type: "TICKET_UNASSIGNED",
+              ticketId,
+              previousAssigneeId: ticket.assigneeId,
+            },
             {
               ticket: {
                 id: ticketId,
@@ -718,9 +740,7 @@ export const assignTicket = async (
               staffIds,
             },
           );
-          for (const job of jobs) {
-            await publishNotificationJob(job);
-          }
+          await createNotifications(jobs);
         }
       }
     }
@@ -787,7 +807,9 @@ export const addAttachments = async (
 
     const files = formData
       .getAll("attachments")
-      .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+      .filter(
+        (entry): entry is File => entry instanceof File && entry.size > 0,
+      );
 
     if (files.length === 0) {
       return { success: false, message: "Select at least one file to attach" };
@@ -800,7 +822,10 @@ export const addAttachments = async (
         { ticketId, count: files.length, max: MAX_FILES },
         "warning",
       );
-      return { success: false, message: `Maximum ${MAX_FILES} files per upload` };
+      return {
+        success: false,
+        message: `Maximum ${MAX_FILES} files per upload`,
+      };
     }
 
     const existingCount = await prisma.ticketAttachment.count({
@@ -819,7 +844,12 @@ export const addAttachments = async (
         logEvent(
           "Attachment rejected: invalid file",
           "ticket",
-          { ticketId, fileName: file.name, mimeType: file.type, size: file.size },
+          {
+            ticketId,
+            fileName: file.name,
+            mimeType: file.type,
+            size: file.size,
+          },
           "warning",
         );
         return { success: false, message: validationError };
@@ -841,7 +871,9 @@ export const addAttachments = async (
           error,
         );
         await Promise.all(
-          uploaded.map((asset) => destroyAsset(asset.publicId, asset.resourceType)),
+          uploaded.map((asset) =>
+            destroyAsset(asset.publicId, asset.resourceType),
+          ),
         );
         return {
           success: false,
@@ -872,7 +904,9 @@ export const addAttachments = async (
         error,
       );
       await Promise.all(
-        uploaded.map((asset) => destroyAsset(asset.publicId, asset.resourceType)),
+        uploaded.map((asset) =>
+          destroyAsset(asset.publicId, asset.resourceType),
+        ),
       );
       return { success: false, message: "Failed to save attachments" };
     }
@@ -941,13 +975,23 @@ export const deleteAttachment = async (
   try {
     const user = await getCurrentUser();
     if (!user) {
-      logEvent("Unauthorized attachment delete attempt", "ticket", {}, "warning");
+      logEvent(
+        "Unauthorized attachment delete attempt",
+        "ticket",
+        {},
+        "warning",
+      );
       return { success: false, message: "You must be logged in" };
     }
 
     const attachmentId = String(formData.get("attachmentId") ?? "");
     if (!attachmentId) {
-      logEvent("Validation error: Missing attachment ID", "ticket", {}, "warning");
+      logEvent(
+        "Validation error: Missing attachment ID",
+        "ticket",
+        {},
+        "warning",
+      );
       return { success: false, message: "Attachment ID is required" };
     }
 
@@ -1089,7 +1133,10 @@ export const deleteComment = async (
         { commentId, ticketId: comment.ticketId, userId: user.id },
         "warning",
       );
-      return { success: false, message: "You are not allowed to delete this comment" };
+      return {
+        success: false,
+        message: "You are not allowed to delete this comment",
+      };
     }
 
     if (!canDeleteUserContent(user, comment.userId)) {
@@ -1099,7 +1146,10 @@ export const deleteComment = async (
         { commentId, ticketId: comment.ticketId, userId: user.id },
         "warning",
       );
-      return { success: false, message: "You are not allowed to delete this comment" };
+      return {
+        success: false,
+        message: "You are not allowed to delete this comment",
+      };
     }
 
     if (comment.deletedAt) {
@@ -1378,7 +1428,12 @@ export const addTicketComment = async (
 
     const ticket = await prisma.ticket.findUnique({ where: { id: ticketId } });
     if (!ticket) {
-      logEvent(`Ticket ${ticketId} not found`, "ticket", { ticketId }, "warning");
+      logEvent(
+        `Ticket ${ticketId} not found`,
+        "ticket",
+        { ticketId },
+        "warning",
+      );
       return { success: false, message: "Ticket not found" };
     }
 
@@ -1417,7 +1472,9 @@ export const addTicketComment = async (
     // why that matters to the notification email.
     const files = formData
       .getAll("attachments")
-      .filter((entry): entry is File => entry instanceof File && entry.size > 0);
+      .filter(
+        (entry): entry is File => entry instanceof File && entry.size > 0,
+      );
 
     if (files.length > MAX_COMMENT_FILES) {
       logEvent(
@@ -1438,7 +1495,12 @@ export const addTicketComment = async (
         logEvent(
           "Comment rejected: invalid attachment",
           "ticket",
-          { ticketId, fileName: file.name, mimeType: file.type, size: file.size },
+          {
+            ticketId,
+            fileName: file.name,
+            mimeType: file.type,
+            size: file.size,
+          },
           "warning",
         );
         return { success: false, message: validationError };
@@ -1461,7 +1523,9 @@ export const addTicketComment = async (
           error,
         );
         await Promise.all(
-          uploaded.map((asset) => destroyAsset(asset.publicId, asset.resourceType)),
+          uploaded.map((asset) =>
+            destroyAsset(asset.publicId, asset.resourceType),
+          ),
         );
         return {
           success: false,
@@ -1498,14 +1562,20 @@ export const addTicketComment = async (
       logEvent(
         "Failed to persist ticket comment",
         "ticket",
-        { ticketId, statusBumped: bumpToInProgress, attachments: uploaded.length },
+        {
+          ticketId,
+          statusBumped: bumpToInProgress,
+          attachments: uploaded.length,
+        },
         "error",
         error,
       );
       // The comment was not written, so its assets are unreachable: sweep them
       // rather than leaking a Cloudinary file per failed post.
       await Promise.all(
-        uploaded.map((asset) => destroyAsset(asset.publicId, asset.resourceType)),
+        uploaded.map((asset) =>
+          destroyAsset(asset.publicId, asset.resourceType),
+        ),
       );
       return { success: false, message: "Failed to post your comment" };
     }
@@ -1567,9 +1637,7 @@ export const addTicketComment = async (
         commentDeletedAt: null,
       },
     );
-    for (const job of notificationJobs) {
-      await publishNotificationJob(job);
-    }
+    await createNotifications(notificationJobs);
 
     return {
       success: true,

@@ -1,5 +1,6 @@
 import type { Role } from "@/generated/prisma/client";
 import { isStaff } from "./roles";
+import { prisma } from "./prisma";
 
 /**
  * Pure in-app notification logic: who to tell, what to say, and how a retry is
@@ -19,7 +20,12 @@ export type NotificationEvent =
   | { type: "TICKET_UNASSIGNED"; ticketId: number; previousAssigneeId: string };
 
 export type NotificationContext = {
-  ticket: { id: number; userId: string; assigneeId: string | null; subject: string };
+  ticket: {
+    id: number;
+    userId: string;
+    assigneeId: string | null;
+    subject: string;
+  };
   actor: { id: string; role: Role };
   /** Every current staff id, so a fan-out does not need one query per person. */
   staffIds: string[];
@@ -131,9 +137,10 @@ export function notificationContent(
 
     case "NEW_COMMENT":
       return {
-        title: ctx.commentAuthor && isStaff(ctx.commentAuthor)
-          ? "New reply on your ticket"
-          : "New customer reply",
+        title:
+          ctx.commentAuthor && isStaff(ctx.commentAuthor)
+            ? "New reply on your ticket"
+            : "New customer reply",
         body: label,
         // Each comment is its own occurrence.
         dedupeKey: String(event.commentId),
@@ -183,4 +190,25 @@ export function buildNotificationJobs(
     body: content.body,
     dedupeKey: content.dedupeKey,
   }));
+}
+
+/**
+ * Directly writes notification rows to the database.
+ *
+ * Replaces the QStash publish path for in-app notifications. This is a single
+ * DB call (createMany) instead of N sequential HTTP requests to QStash.
+ * The same skipDuplicates + unique index dedupe logic applies.
+ *
+ * If the DB is down, the action fails — which is correct for in-app
+ * notifications (no silent loss, user sees the error and can retry).
+ */
+export async function createNotifications(
+  jobs: NotificationJob[],
+): Promise<void> {
+  if (jobs.length === 0) return;
+
+  await prisma.notification.createMany({
+    data: jobs,
+    skipDuplicates: true,
+  });
 }

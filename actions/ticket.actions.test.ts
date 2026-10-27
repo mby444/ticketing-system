@@ -20,10 +20,8 @@ const { prisma } = await vi.hoisted(async () => {
   return { prisma: createPrismaMock() };
 });
 const { getCurrentUser } = vi.hoisted(() => ({ getCurrentUser: vi.fn() }));
-const { publishJob, publishNotificationJob } = vi.hoisted(() => ({
-  publishJob: vi.fn(),
-  publishNotificationJob: vi.fn(),
-}));
+const { publishJob } = vi.hoisted(() => ({ publishJob: vi.fn() }));
+const { createNotifications } = vi.hoisted(() => ({ createNotifications: vi.fn() }));
 const { revalidatePath } = vi.hoisted(() => ({ revalidatePath: vi.fn() }));
 const { logEvent } = vi.hoisted(() => ({ logEvent: vi.fn() }));
 const { uploadAttachment, destroyAsset, validateAttachmentFile } = vi.hoisted(() => ({
@@ -36,7 +34,8 @@ const { uploadAttachment, destroyAsset, validateAttachmentFile } = vi.hoisted(()
 
 vi.mock("@/lib/prisma", () => ({ prisma }));
 vi.mock("@/lib/current-user", () => ({ getCurrentUser }));
-vi.mock("@/lib/qstash", () => ({ publishJob, publishNotificationJob }));
+vi.mock("@/lib/qstash", () => ({ publishJob }));
+vi.mock("./notification.actions", () => ({ createNotifications }));
 vi.mock("next/cache", () => ({ revalidatePath }));
 vi.mock("@/utils/sentry", () => ({ logEvent }));
 vi.mock("@sentry/nextjs", () => ({
