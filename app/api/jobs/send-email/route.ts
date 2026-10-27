@@ -1,53 +1,12 @@
 import { Receiver } from "@upstash/qstash";
 import { sendJobEmail } from "@/lib/email";
-import type { EmailJob } from "@/lib/qstash";
+import { isValidJob } from "@/lib/qstash";
 import { logEvent } from "@/utils/sentry";
 
 const receiver = new Receiver({
   currentSigningKey: process.env.QSTASH_CURRENT_SIGNING_KEY,
   nextSigningKey: process.env.QSTASH_NEXT_SIGNING_KEY,
 });
-
-/**
- * Shape check for an already-authenticated payload. Anything unexpected
- * (unknown type, wrong field types) is a permanent error — acknowledging it
- * with 200 keeps QStash from retrying a message that can never succeed.
- *
- * The switch is on `type` FIRST, with the field checks inside each arm. An
- * earlier version checked `typeof job.ticketId === "number"` before the switch,
- * which silently excluded every ticketless job — PASSWORD_RESET_OTP has no
- * ticket and was rejected as malformed before the worker ever saw it.
- *
- * Exported so the contract can be locked down in a test. A shape check that
- * rejects a valid payload fails *silently*: QStash gets a 200, nothing is sent,
- * and the only symptom is a code that never arrives.
- */
-export function isValidJob(value: unknown): value is EmailJob {
-  if (typeof value !== "object" || value === null) return false;
-  const job = value as Record<string, unknown>;
-
-  switch (job.type) {
-    case "TICKET_CREATED":
-      return typeof job.ticketId === "number";
-    case "STATUS_UPDATED":
-      return typeof job.ticketId === "number" && typeof job.newStatus === "string";
-    case "NEW_COMMENT":
-      return typeof job.ticketId === "number" && typeof job.commentId === "number";
-    case "TICKET_ASSIGNED":
-      return typeof job.ticketId === "number" && typeof job.assigneeId === "string";
-    case "TICKET_UNASSIGNED":
-      return (
-        typeof job.ticketId === "number" &&
-        typeof job.previousAssigneeId === "string"
-      );
-    case "PASSWORD_RESET_OTP":
-      // Deliberately no ticketId, and deliberately no code: the worker reads
-      // both the address and the credential from the database.
-      return typeof job.userId === "string" && typeof job.otpId === "string";
-    default:
-      return false;
-  }
-}
 
 /**
  * QStash worker endpoint.

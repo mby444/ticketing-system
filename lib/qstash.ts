@@ -6,6 +6,46 @@ import { logEvent } from "@/utils/sentry";
  * minimal: the worker re-reads fresh ticket/recipient data from the database,
  * so no PII ever sits in the message broker.
  */
+/**
+ * Shape check for an already-authenticated payload. Anything unexpected
+ * (unknown type, wrong field types) is a permanent error - acknowledging it
+ * with 200 keeps QStash from retrying a message that can never succeed.
+ *
+ * The switch is on `type` FIRST, with the field checks inside each arm. An
+ * earlier version checked `typeof job.ticketId === "number"` before the switch,
+ * which silently excluded every ticketless job - PASSWORD_RESET_OTP has no
+ * ticket and was rejected as malformed before the worker ever saw it.
+ *
+ * Lives here (not in the route module) so the route file only exports the
+ * HTTP handler - Next.js 16 disallows extra exports in route modules.
+ */
+export function isValidJob(value: unknown): value is EmailJob {
+  if (typeof value !== "object" || value === null) return false;
+  const job = value as Record<string, unknown>;
+
+  switch (job.type) {
+    case "TICKET_CREATED":
+      return typeof job.ticketId === "number";
+    case "STATUS_UPDATED":
+      return typeof job.ticketId === "number" && typeof job.newStatus === "string";
+    case "NEW_COMMENT":
+      return typeof job.ticketId === "number" && typeof job.commentId === "number";
+    case "TICKET_ASSIGNED":
+      return typeof job.ticketId === "number" && typeof job.assigneeId === "string";
+    case "TICKET_UNASSIGNED":
+      return (
+        typeof job.ticketId === "number" &&
+        typeof job.previousAssigneeId === "string"
+      );
+    case "PASSWORD_RESET_OTP":
+      // Deliberately no ticketId, and deliberately no code: the worker reads
+      // both the address and the credential from the database.
+      return typeof job.userId === "string" && typeof job.otpId === "string";
+    default:
+      return false;
+  }
+}
+
 export type EmailJob =
   | { type: "TICKET_CREATED"; ticketId: number }
   | { type: "STATUS_UPDATED"; ticketId: number; newStatus: string }
