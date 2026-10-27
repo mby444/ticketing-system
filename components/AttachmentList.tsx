@@ -26,15 +26,15 @@ const AttachmentList = ({
   if (attachments.length === 0) return null;
 
   return (
-    <div className="text-slate-700">
-      <h2 className="text-lg font-semibold text-slate-900 mb-2">Attachments</h2>
+    <section className="bg-surface-container-lowest rounded-2xl border border-slate-200 shadow-card p-6">
+      <h2 className="text-title-md text-slate-900 mb-3">Attachments</h2>
       <AttachmentGrid
         attachments={attachments}
         viewer={viewer}
         ticketOwnerId={ticketOwnerId}
         deleteAction={deleteAttachment}
       />
-    </div>
+    </section>
   );
 };
 

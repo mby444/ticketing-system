@@ -4,8 +4,6 @@ import { useActionState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { addAttachments } from "@/actions/ticket.actions";
 
-// Duplicated from lib/cloudinary.ts (client bundle must not pull in the SDK).
-// Server-side checks in the action stay authoritative.
 const ALLOWED_MIME_TYPES = [
   "image/jpeg",
   "image/png",
@@ -71,38 +69,45 @@ const AttachForm = ({ ticketId }: { ticketId: number }) => {
     <form
       ref={formRef}
       action={formAction}
-      className="border-t border-slate-100 pt-4"
+      className="bg-surface-container-lowest rounded-2xl border border-slate-200 shadow-card p-5"
     >
       <input type="hidden" name="ticketId" value={ticketId} />
       <label
         htmlFor="attach-more"
-        className="block text-sm font-medium text-slate-600 mb-1"
+        className="mb-2 block text-sm font-medium text-slate-700"
       >
         Add attachments
       </label>
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-        <input
-          id="attach-more"
-          className="text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-indigo-700 hover:file:bg-indigo-100"
-          type="file"
-          name="attachments"
-          multiple
-          accept="image/jpeg,image/png,image/webp,application/pdf"
-          onChange={handleChange}
-          disabled={pending}
-        />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <label
+          htmlFor="attach-more"
+          className="flex-1 cursor-pointer rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 px-4 py-6 text-center text-sm text-slate-500 transition hover:border-indigo-400 hover:bg-indigo-50/40"
+        >
+          <span className="block font-medium text-slate-700">
+            Click to choose files
+          </span>
+          <span className="mt-1 block text-xs text-slate-400">
+            JPG, PNG, WebP, or PDF — up to {MAX_FILES} files, max 5 MB each
+          </span>
+          <input
+            id="attach-more"
+            className="sr-only"
+            type="file"
+            name="attachments"
+            multiple
+            accept="image/jpeg,image/png,image/webp,application/pdf"
+            onChange={handleChange}
+            disabled={pending}
+          />
+        </label>
         <button
           type="submit"
           disabled={pending}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg px-4 py-2 shadow-sm transition disabled:opacity-60"
+          className="flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 sm:self-end"
         >
           {pending ? "Uploading…" : "Upload"}
         </button>
       </div>
-      <p className="text-xs text-slate-400 mt-1">
-        JPG, PNG, WebP, or PDF — up to {MAX_FILES} files per ticket, max 5 MB
-        each
-      </p>
     </form>
   );
 };

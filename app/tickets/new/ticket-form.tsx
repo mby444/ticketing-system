@@ -6,8 +6,6 @@ import { createTicket } from "@/actions/ticket.actions";
 import { PRIORITY_OPTIONS } from "@/lib/priority";
 import { toast } from "sonner";
 
-// Duplicated from lib/cloudinary.ts — that module imports the Cloudinary SDK
-// and must never enter the client bundle. Server-side checks stay authoritative.
 const ALLOWED_MIME_TYPES = [
   "image/jpeg",
   "image/png",
@@ -17,6 +15,13 @@ const ALLOWED_MIME_TYPES = [
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const MAX_FILES = 5;
 
+const PRIORITY_ACCENT: Record<string, string> = {
+  Low: "border-slate-300 text-slate-700",
+  Medium: "border-amber-300 text-amber-700",
+  High: "border-rose-300 text-rose-700",
+  Critical: "border-purple-300 text-purple-700",
+};
+
 const NewTicketForm = () => {
   const [state, formAction, pending] = useActionState(createTicket, {
     success: false,
@@ -24,12 +29,11 @@ const NewTicketForm = () => {
   });
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [priority, setPriority] = useState<string>("Low");
   const router = useRouter();
 
   useEffect(() => {
     if (state.success) {
-      // Success navigates away (component unmounts, resetting file state);
-      // on failure the selection is kept so the user can retry directly.
       toast.success(state.message);
       router.push("/tickets");
     }
@@ -82,70 +86,123 @@ const NewTicketForm = () => {
   const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0);
 
   return (
-    <div className="w-full max-w-4xl mx-auto bg-white shadow-sm rounded-xl border border-slate-200 p-6">
-      <h1 className="text-3xl font-bold mb-6 text-center text-indigo-600">
-        Submit a Support Ticket
-      </h1>
-      <form action={formAction} className="space-y-5 text-slate-700">
-        <input
-          className="w-full border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          type="text"
-          name="subject"
-          placeholder="Subject"
-          disabled={pending}
-        />
-        <textarea
-          className="w-full border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          name="description"
-          placeholder="Describe your issue"
-          rows={4}
-          disabled={pending}
-        />
-        <select
-          className="w-full border border-slate-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700"
-          name="priority"
-          defaultValue="Low"
-          disabled={pending}
-        >
-          {PRIORITY_OPTIONS.map((option) => (
-            <option key={option} value={option}>
-              {option} Priority
-            </option>
-          ))}
-        </select>
+    <div className="w-full max-w-3xl mx-auto bg-surface-container-lowest shadow-card rounded-2xl border border-slate-200 p-8">
+      <div className="mb-6 text-center">
+        <h1 className="text-headline-md text-slate-900">Submit a Support Ticket</h1>
+        <p className="mt-1 text-body-md text-slate-500">
+          Tell us what you need help with
+        </p>
+      </div>
+      <form action={formAction} className="space-y-6 text-slate-700">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">
+            Subject
+          </label>
+          <input
+            className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            type="text"
+            name="subject"
+            placeholder="Brief summary of your issue"
+            disabled={pending}
+          />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">
+            Description
+          </label>
+          <textarea
+            className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+            name="description"
+            placeholder="Describe your issue in detail"
+            rows={5}
+            disabled={pending}
+          />
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-medium text-slate-700">
+            Priority
+          </label>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {PRIORITY_OPTIONS.map((option) => {
+              const selected = priority === option;
+              return (
+                <label
+                  key={option}
+                  className={`cursor-pointer rounded-xl border-2 p-3 text-center transition ${
+                    selected
+                      ? "border-indigo-600 bg-indigo-50 shadow-sm"
+                      : `bg-white hover:border-slate-400 ${PRIORITY_ACCENT[option]}`
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="priority"
+                    value={option}
+                    checked={selected}
+                    onChange={() => setPriority(option)}
+                    disabled={pending}
+                    className="sr-only"
+                  />
+                  <span
+                    className={`block text-sm font-semibold ${
+                      selected ? "text-indigo-700" : ""
+                    }`}
+                  >
+                    {option}
+                  </span>
+                  <span
+                    className={`mt-1 block text-[10px] uppercase tracking-wide ${
+                      selected ? "text-indigo-500" : "text-slate-400"
+                    }`}
+                  >
+                    Priority
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </div>
 
         <div>
           <label
             htmlFor="attachments"
-            className="block text-sm font-medium mb-1 text-slate-600"
+            className="mb-1.5 block text-sm font-medium text-slate-700"
           >
             Attachments (optional)
           </label>
-          <input
-            id="attachments"
-            className="w-full text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-indigo-700 hover:file:bg-indigo-100"
-            type="file"
-            name="attachments"
-            multiple
-            accept="image/jpeg,image/png,image/webp,application/pdf"
-            onChange={handleFileChange}
-            disabled={pending}
-          />
-          <p className="text-xs text-slate-400 mt-1">
-            JPG, PNG, WebP, or PDF — up to {MAX_FILES} files, max 5 MB each
-          </p>
+          <label
+            htmlFor="attachments"
+            className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 px-4 py-8 text-center transition hover:border-indigo-400 hover:bg-indigo-50/40"
+          >
+            <span className="text-sm font-medium text-slate-700">
+              Drag &amp; drop files here, or click to browse
+            </span>
+            <span className="mt-1 text-xs text-slate-400">
+              JPG, PNG, WebP, or PDF — up to {MAX_FILES} files, max 5 MB each
+            </span>
+            <input
+              id="attachments"
+              className="sr-only"
+              type="file"
+              name="attachments"
+              multiple
+              accept="image/jpeg,image/png,image/webp,application/pdf"
+              onChange={handleFileChange}
+              disabled={pending}
+            />
+          </label>
           {selectedFiles.length > 0 && (
-            <div className="mt-2 text-xs text-slate-500">
-              <p>
+            <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600">
+              <p className="font-medium text-slate-700">
                 {selectedFiles.length} file
                 {selectedFiles.length === 1 ? "" : "s"} ·{" "}
                 {(totalSize / 1024).toFixed(0)} KB
               </p>
-              <ul className="mt-1 space-y-0.5 text-slate-600">
+              <ul className="mt-1.5 space-y-1">
                 {selectedFiles.map((file) => (
                   <li
                     key={`${file.name}-${file.size}`}
-                    className="flex justify-between gap-2"
+                    className="flex items-center justify-between gap-2"
                   >
                     <span className="truncate">{file.name}</span>
                     <span className="shrink-0 text-slate-400">
@@ -159,11 +216,11 @@ const NewTicketForm = () => {
         </div>
 
         <button
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg px-4 py-2 shadow-sm transition disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
           type="submit"
           disabled={pending}
         >
-          {pending ? "Uploading…" : "Submit"}
+          {pending ? "Submitting…" : "Submit Ticket"}
         </button>
       </form>
     </div>

@@ -33,7 +33,7 @@ const CloseTicketButton = ({
       <input type="hidden" name="ticketId" value={ticketId} />
       <button
         type="submit"
-        className="bg-rose-600 text-white font-medium px-3 py-3 w-full rounded-lg shadow-sm transition hover:bg-rose-700"
+        className="w-full rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700"
       >
         Close Ticket
       </button>

@@ -23,24 +23,7 @@ type TicketCommentView = {
 };
 
 /**
- * Chronological, flat comment thread. Server component — `isStaff` costs
- * nothing here. The author badge distinguishes support replies from customer
- * ones; the viewer's own comments are right-aligned for readability.
- *
- * Soft-deleted comments keep their place in the list and render as "[removed]"
- * with the body withheld — a thread that simply lost a support reply reads as if
- * the customer were talking to themselves. The author name stays visible so the
- * shape of the conversation is preserved, but the text is gone for good.
- *
- * Files on a removed comment are withheld for the same reason: the rows are kept
- * (so the thread has no hole and the attachments stay auditable), but a soft
- * delete is meant to retract the *message*, and a screenshot is part of it.
- * `deleteCommentAttachment` enforces the same rule server-side, so the withheld
- * files cannot be deleted through the action either.
- *
- * Files on a live comment render through the shared `AttachmentGrid` with
- * `showBadge` off: the bubble already says "Support Staff" for its author, so a
- * second badge on the same message would be noise.
+ * Chronological, flat comment thread. Server component.
  */
 const CommentThread = ({
   comments,
@@ -57,7 +40,7 @@ const CommentThread = ({
 }) => {
   if (comments.length === 0) {
     return (
-      <p className="text-sm text-slate-500 border border-dashed border-slate-300 rounded p-4">
+      <p className="text-sm text-slate-500 border border-dashed border-slate-200 rounded-xl bg-slate-50/60 p-4">
         {isClosed
           ? "No comments on this ticket."
           : "No comments yet — start the conversation below."}
@@ -66,7 +49,7 @@ const CommentThread = ({
   }
 
   return (
-    <ol className="space-y-3">
+    <ol className="space-y-4">
       {comments.map((comment) => {
         const staff = comment.user.id !== ticketOwnerId;
         const mine = comment.user.id === viewerId;
@@ -80,20 +63,20 @@ const CommentThread = ({
             className={`flex ${mine ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[85%] rounded-lg border p-3 ${
+              className={`max-w-[85%] rounded-2xl border p-4 shadow-sm ${
                 removed
-                  ? "bg-slate-50 border-slate-200"
+                  ? "bg-slate-100/60 border-slate-200 text-slate-500 italic"
                   : staff
-                    ? "bg-indigo-50 border-indigo-200"
-                    : "bg-white border-slate-200"
+                    ? "bg-indigo-50/50 border-indigo-100 rounded-tr-sm"
+                    : "bg-white border-slate-200 rounded-tl-sm"
               }`}
             >
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-2 mb-2">
                 <span className="text-sm font-semibold text-slate-900">
                   {comment.user.name ?? comment.user.email}
                 </span>
                 {staff && (
-                  <span className="text-xs uppercase tracking-wide bg-indigo-600 text-white rounded px-1.5 py-0.5">
+                  <span className="text-[10px] uppercase tracking-wide bg-indigo-600 text-white rounded-full px-2 py-0.5">
                     Support Staff
                   </span>
                 )}
@@ -109,10 +92,10 @@ const CommentThread = ({
                 )}
               </div>
               {removed ? (
-                <p className="text-sm text-slate-400 italic">
+                <p className="text-sm text-slate-500 italic">
                   Comment removed
                   {comment.deletedBy && (
-                    <span className="text-slate-300">
+                    <span className="text-slate-400">
                       {" "}
                       by {comment.deletedBy.name ?? comment.deletedBy.email}
                     </span>
@@ -120,11 +103,10 @@ const CommentThread = ({
                 </p>
               ) : (
                 <>
-                  {/* Rendered as text: React escapes it, so never use raw HTML here. */}
                   <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">
                     {comment.body}
                   </p>
-                  <div className="mt-2">
+                  <div className="mt-3">
                     <AttachmentGrid
                       attachments={comment.attachments}
                       viewer={viewer}

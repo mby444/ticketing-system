@@ -5,11 +5,6 @@ import { canDeleteUserContent } from "@/lib/delete-permissions";
 import DeleteButton from "@/components/DeleteButton";
 import type { Role } from "@/generated/prisma/client";
 
-/**
- * The one shape every attachment row has, whether it hangs off a ticket
- * (`TicketAttachment`) or a comment (`CommentAttachment`). The two tables carry
- * identical metadata columns precisely so this component can render both.
- */
 export type AttachmentView = {
   id: string;
   fileName: string;
@@ -27,37 +22,11 @@ export type AttachmentView = {
   };
 };
 
-/** Server action shaped for `useActionState`, i.e. what DeleteButton accepts. */
 type DeleteAction = (
   prev: { success: boolean; message: string },
   data: FormData,
 ) => Promise<{ success: boolean; message: string }>;
 
-/**
- * Renders a set of attachments as image tiles and PDF rows. Server component.
- *
- * Extracted out of `AttachmentList` so the ticket page and the comment thread
- * share one implementation. The delete action and the form field carrying the
- * id are passed in, because the two tables have separate actions
- * (`deleteAttachment` vs `deleteCommentAttachment`) — sharing the *markup* is
- * worth it, sharing the *action* would have meant one action branching on which
- * table to touch.
- *
- * Two geometry notes carried over from the ticket-level list, both deliberate:
- *
- * - The image tile is a wrapper div, not the `<a>` itself: nesting the delete
- *   `<button>` inside a link is invalid interactive content and would also open
- *   the file on click. The control therefore floats over the tile (trash
- *   top-right, badge bottom-left) and confirms with an in-card overlay so the
- *   row never reflows.
- * - `sm` tiles are used inside a comment bubble, where the `lg` 96px square of
- *   the ticket page would dominate the message.
- *
- * `showBadge` is off inside the thread: the bubble already carries a "Support
- * Staff" badge for its author, and a second badge on the same message reads as
- * noise. The ticket-level list keeps it, because there the file is the only
- * thing carrying that information.
- */
 const AttachmentGrid = ({
   attachments,
   viewer,
@@ -71,7 +40,6 @@ const AttachmentGrid = ({
   viewer: { id: string; role: Role };
   ticketOwnerId: string;
   deleteAction: DeleteAction;
-  /** Form field name carrying the attachment id into the action. */
   idField?: string;
   size?: "sm" | "lg";
   showBadge?: boolean;
@@ -83,9 +51,6 @@ const AttachmentGrid = ({
   return (
     <div className="flex flex-wrap gap-3">
       {attachments.map((attachment) => {
-        // The predicate is `uploader !== ticket owner`, not `isStaff(uploader)`:
-        // a staff member attaching to their *own* ticket is not something the
-        // customer needs to be told about.
         const fromSupport = showBadge && attachment.uploadedBy.id !== ticketOwnerId;
         const uploaderName =
           attachment.uploadedBy.name ?? attachment.uploadedBy.email;
@@ -96,7 +61,7 @@ const AttachmentGrid = ({
         const canDelete = canDeleteUserContent(viewer, attachment.uploadedBy.id);
 
         const badge = fromSupport && (
-          <span className="text-[10px] uppercase tracking-wide bg-indigo-600 text-white rounded px-1 py-0.5 shrink-0 pointer-events-none">
+          <span className="absolute bottom-1 left-1 text-[10px] uppercase tracking-wide bg-indigo-600 text-white rounded-full px-1.5 py-0.5 shadow-sm pointer-events-none">
             Support Staff
           </span>
         );
@@ -111,13 +76,13 @@ const AttachmentGrid = ({
         );
 
         return attachment.mimeType.startsWith("image/") ? (
-          <div key={attachment.id} className="relative">
+          <div key={attachment.id} className="relative group">
             <a
               href={attachment.url}
               target="_blank"
               rel="noopener noreferrer"
               title={fromSupport ? `${attachment.fileName} — ${trace}` : attachment.fileName}
-              className={`block ${tileSize} rounded overflow-hidden border border-slate-200 hover:opacity-80 transition`}
+              className={`block ${tileSize} rounded-xl overflow-hidden border border-slate-200 shadow-sm hover:opacity-90 hover:shadow-elevated transition`}
             >
               <Image
                 src={getThumbnailUrl(attachment)}
@@ -127,13 +92,13 @@ const AttachmentGrid = ({
                 className="object-cover"
               />
             </a>
-            {badge && <span className="absolute bottom-0 left-0">{badge}</span>}
+            {badge}
             {deleteControl}
           </div>
         ) : (
           <div
             key={attachment.id}
-            className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+            className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-xl bg-white shadow-sm text-sm"
           >
             <a
               href={attachment.url}
@@ -142,13 +107,17 @@ const AttachmentGrid = ({
               title={fromSupport ? trace : attachment.fileName}
               className="flex items-center gap-2 text-indigo-600 hover:underline"
             >
-              <FaFilePdf className="text-slate-500 shrink-0" />
+              <FaFilePdf className="text-rose-500 shrink-0" />
               <span className="max-w-[10rem] truncate">{attachment.fileName}</span>
               <span className="text-slate-400 text-xs whitespace-nowrap">
                 ({Math.max(1, Math.round(attachment.size / 1024))} KB)
               </span>
             </a>
-            {badge}
+            {fromSupport && (
+              <span className="text-[10px] uppercase tracking-wide bg-indigo-600 text-white rounded-full px-1.5 py-0.5">
+                Support Staff
+              </span>
+            )}
             {canDelete && (
               <DeleteButton
                 action={deleteAction}

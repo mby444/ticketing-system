@@ -9,8 +9,6 @@ import {
   MAX_FILE_SIZE,
 } from "@/lib/attachment-limits";
 
-// Duplicated from actions/ticket.actions.ts — the server-side check stays
-// authoritative, this one only drives the UI affordance.
 const MAX_COMMENT_LENGTH = 5000;
 
 const CommentForm = ({
@@ -30,16 +28,12 @@ const CommentForm = ({
   useEffect(() => {
     if (state.success && state.message) {
       toast.success(state.message);
-      // revalidatePath refreshes the server payload but does not remount this
-      // client component, so the textarea has to be cleared explicitly.
       if (formRef.current) formRef.current.reset();
     } else if (!state.success && state.message) {
       toast.error(state.message);
     }
   }, [state]);
 
-  // Same pre-checks as attach-form.tsx. These are affordances only: the action
-  // re-validates every file server-side, and its verdict is the one that counts.
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const chosen = Array.from(event.target.files ?? []);
 
@@ -75,37 +69,42 @@ const CommentForm = ({
     }
   };
 
-  // Defence in depth — the action rejects Closed tickets for every role.
   if (isClosed) {
     return (
-      <p className="text-sm text-slate-500 border border-dashed border-slate-300 rounded p-4">
+      <p className="text-sm text-slate-500 border border-dashed border-slate-200 rounded-xl bg-slate-50/60 p-4">
         This ticket is closed. Reopen it to continue the conversation.
       </p>
     );
   }
 
   return (
-    <form ref={formRef} action={formAction} className="space-y-2">
+    <form
+      ref={formRef}
+      action={formAction}
+      className="bg-surface-container-lowest rounded-2xl border border-slate-200 shadow-card p-5 space-y-4"
+    >
       <input type="hidden" name="ticketId" value={ticketId} />
-      <label
-        htmlFor="comment-body"
-        className="block text-sm font-medium text-slate-600"
-      >
-        Add a comment
-      </label>
-      <textarea
-        id="comment-body"
-        name="body"
-        rows={4}
-        maxLength={MAX_COMMENT_LENGTH}
-        placeholder="Write your reply…"
-        disabled={pending}
-        className="w-full border border-slate-300 rounded-lg p-3 rounded text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
-      />
+      <div>
+        <label
+          htmlFor="comment-body"
+          className="mb-1.5 block text-sm font-medium text-slate-700"
+        >
+          Add a comment
+        </label>
+        <textarea
+          id="comment-body"
+          name="body"
+          rows={4}
+          maxLength={MAX_COMMENT_LENGTH}
+          placeholder="Write your reply…"
+          disabled={pending}
+          className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-60"
+        />
+      </div>
       <div>
         <label
           htmlFor="comment-attachments"
-          className="block text-sm font-medium text-slate-600"
+          className="mb-1.5 block text-sm font-medium text-slate-700"
         >
           Attachments (optional)
         </label>
@@ -117,7 +116,7 @@ const CommentForm = ({
           accept="image/jpeg,image/png,image/webp,application/pdf"
           onChange={handleFileChange}
           disabled={pending}
-          className="text-sm text-slate-600 file:mr-3 file:rounded file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-indigo-700 hover:file:bg-indigo-100"
+          className="w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-indigo-700 hover:file:bg-indigo-100"
         />
         <p className="text-xs text-slate-400 mt-1">
           JPG, PNG, WebP, or PDF — up to {MAX_COMMENT_FILES} files per comment,
@@ -131,7 +130,7 @@ const CommentForm = ({
         <button
           type="submit"
           disabled={pending}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg px-4 py-2 shadow-sm transition disabled:opacity-60"
+          className="flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {pending ? "Posting…" : "Post comment"}
         </button>

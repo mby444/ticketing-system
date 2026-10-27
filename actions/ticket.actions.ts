@@ -531,6 +531,7 @@ export const updateTicketStatus = async (
 
     revalidatePath("/dashboard");
     revalidatePath("/tickets");
+    revalidatePath("/tickets/[id]", "page");
 
     // Best-effort: enqueue only — the status email goes out asynchronously.
     await publishJob({ type: "STATUS_UPDATED", ticketId, newStatus: status });

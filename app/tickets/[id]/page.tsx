@@ -6,6 +6,7 @@ import { getPriorityClass, getStatusClass } from "@/utils/ui";
 import CloseTicketButton from "@/components/CloseTicketButton";
 import AttachmentList from "@/components/AttachmentList";
 import AssignSelect from "@/components/AssignSelect";
+import StatusSelect from "@/components/dashboard/StatusSelect";
 import { requireUser } from "@/lib/authorization";
 import { isStaff } from "@/lib/roles";
 import { formatStatus } from "@/utils/string-format";
@@ -33,38 +34,49 @@ const TicketDetailsPage = async (props: {
   const agents = staffView ? await listAgents() : [];
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          <main className="lg:col-span-7 space-y-6">
-            <h1 className="text-3xl font-bold text-indigo-600">
-              {ticket.subject}
-            </h1>
+    <div className="min-h-screen bg-surface p-6 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        <div className="mb-6 flex items-center gap-3">
+          <Link
+            href="/tickets"
+            className="inline-flex items-center gap-1 text-sm font-medium text-slate-500 transition hover:text-indigo-600"
+          >
+            <span aria-hidden="true">←</span> Back to Tickets
+          </Link>
+        </div>
 
-            <div className="text-slate-700">
-              <h2 className="text-lg font-semibold text-slate-900 mb-2">
-                Description
-              </h2>
-              <p className="text-slate-700">{ticket.description}</p>
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <main className="lg:col-span-2 space-y-6">
+            <header className="bg-surface-container-lowest rounded-2xl border border-slate-200 shadow-card p-6">
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <span className="text-label-sm text-slate-500">#{ticket.id}</span>
+                <span className={getPriorityClass(ticket.priority)}>
+                  {ticket.priority}
+                </span>
+                <span className={getStatusClass(ticket.status)}>
+                  {formatStatus(ticket.status)}
+                </span>
+              </div>
+              <h1 className="text-headline-md text-slate-900 tracking-tight">
+                {ticket.subject}
+              </h1>
+              {staffView && (
+                <p className="mt-2 text-body-sm text-slate-500">
+                  Requested by{" "}
+                  <span className="font-medium text-slate-700">
+                    {ticket.user.name ?? ticket.user.email}
+                  </span>{" "}
+                  · {ticket.user.email}
+                </p>
+              )}
+            </header>
 
-            <div className="text-slate-700">
-              <h2 className="text-lg font-semibold text-slate-900 mb-2">
-                Priority
-              </h2>
-              <p className={getPriorityClass(ticket.priority)}>
-                {ticket.priority}
+            <section className="bg-surface-container-lowest rounded-2xl border border-slate-200 shadow-card p-6">
+              <h2 className="text-title-md text-slate-900 mb-3">Description</h2>
+              <p className="text-body-md text-slate-700 whitespace-pre-wrap break-words">
+                {ticket.description}
               </p>
-            </div>
-
-            <div className="text-slate-700">
-              <h2 className="text-lg font-semibold text-slate-900 mb-2">
-                Status
-              </h2>
-              <p className={getStatusClass(ticket.status)}>
-                {formatStatus(ticket.status)}
-              </p>
-            </div>
+            </section>
 
             <AttachmentList
               attachments={ticket.attachments}
@@ -74,11 +86,15 @@ const TicketDetailsPage = async (props: {
 
             <AttachForm ticketId={ticket.id} />
 
-            <div className="text-slate-700">
-              <h2 className="text-lg font-semibold text-slate-900 mb-2">
-                Conversation
-                {ticket.comments.length > 0 ? ` (${ticket.comments.length})` : ""}
-              </h2>
+            <section className="bg-surface-container-lowest rounded-2xl border border-slate-200 shadow-card p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-title-md text-slate-900">
+                  Conversation
+                  {ticket.comments.length > 0
+                    ? ` (${ticket.comments.length})`
+                    : ""}
+                </h2>
+              </div>
               <div className="space-y-4">
                 <CommentThread
                   comments={ticket.comments}
@@ -89,72 +105,92 @@ const TicketDetailsPage = async (props: {
                 />
                 <CommentForm ticketId={ticket.id} isClosed={isClosed} />
               </div>
-            </div>
+            </section>
           </main>
 
-          <aside className="lg:col-span-5 space-y-6">
-            {staffView && (
-              <div className="text-slate-700">
-                <h2 className="text-lg font-semibold text-slate-900 mb-2">
-                  Requester
-                </h2>
-                <p className="text-slate-900">
-                  {ticket.user.name ?? ticket.user.email}
-                </p>
-                <p className="text-xs text-slate-500">{ticket.user.email}</p>
+          <aside className="lg:col-span-1">
+            <div className="sticky top-24 space-y-4">
+              <div className="bg-surface-container-lowest rounded-2xl border border-slate-200 shadow-card p-6 space-y-5">
+                <div>
+                  <h3 className="text-label-sm text-slate-500 mb-2">Status</h3>
+                  {staffView ? (
+                    <StatusSelect ticketId={ticket.id} status={ticket.status} />
+                  ) : (
+                    <span className={getStatusClass(ticket.status)}>
+                      {formatStatus(ticket.status)}
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="text-label-sm text-slate-500 mb-2">Priority</h3>
+                  <span className={getPriorityClass(ticket.priority)}>
+                    {ticket.priority}
+                  </span>
+                </div>
+
+                <div>
+                  <h3 className="text-label-sm text-slate-500 mb-2">Assignee</h3>
+                  {staffView ? (
+                    <AssignSelect
+                      ticketId={ticket.id}
+                      assigneeId={ticket.assigneeId}
+                      agents={agents}
+                    />
+                  ) : ticket.assignedTo ? (
+                    <div>
+                      <p className="text-body-sm font-medium text-slate-900">
+                        {ticket.assignedTo.name ?? ticket.assignedTo.email}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {ticket.assignedTo.email}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-body-sm text-slate-500">Not assigned</p>
+                  )}
+                </div>
+
+                {staffView && (
+                  <div>
+                    <h3 className="text-label-sm text-slate-500 mb-2">
+                      Requester
+                    </h3>
+                    <p className="text-body-sm font-medium text-slate-900">
+                      {ticket.user.name ?? ticket.user.email}
+                    </p>
+                    <p className="text-xs text-slate-500">{ticket.user.email}</p>
+                  </div>
+                )}
+
+                <div>
+                  <h3 className="text-label-sm text-slate-500 mb-2">
+                    Created At
+                  </h3>
+                  <p className="text-body-sm text-slate-700">
+                    {new Date(ticket.createdAt).toLocaleString()}
+                  </p>
+                </div>
+
+                <div>
+                  <h3 className="text-label-sm text-slate-500 mb-2">
+                    Ticket ID
+                  </h3>
+                  <p className="text-body-sm text-slate-700">#{ticket.id}</p>
+                </div>
+
+                <div>
+                  <h3 className="text-label-sm text-slate-500 mb-2">SLA</h3>
+                  <p className="text-body-sm text-slate-700">
+                    Response within 24 hours
+                  </p>
+                </div>
+
+                {!isClosed && (
+                  <CloseTicketButton ticketId={ticket.id} isClosed={isClosed} />
+                )}
               </div>
-            )}
-
-            <div className="text-slate-700">
-              <h2 className="text-lg font-semibold text-slate-900 mb-2">
-                Assignee
-              </h2>
-              {staffView ? (
-                <AssignSelect
-                  ticketId={ticket.id}
-                  assigneeId={ticket.assigneeId}
-                  agents={agents}
-                />
-              ) : ticket.assignedTo ? (
-                <>
-                  <p className="text-slate-900">
-                    {ticket.assignedTo.name ?? ticket.assignedTo.email}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {ticket.assignedTo.email}
-                  </p>
-                </>
-              ) : (
-                <p className="text-slate-500">Not assigned</p>
-              )}
             </div>
-
-            <div className="text-slate-700">
-              <h2 className="text-lg font-semibold text-slate-900 mb-2">
-                Created At
-              </h2>
-              <p className="text-slate-700">
-                {new Date(ticket.createdAt).toLocaleString()}
-              </p>
-            </div>
-
-            <div className="text-slate-700">
-              <h2 className="text-lg font-semibold text-slate-900 mb-2">
-                SLA
-              </h2>
-              <p className="text-slate-700">Response within 24 hours</p>
-            </div>
-
-            {!isClosed && (
-              <CloseTicketButton ticketId={ticket.id} isClosed={isClosed} />
-            )}
-
-            <Link
-              href="/tickets"
-              className="inline-block rounded bg-indigo-600 text-white px-4 py-2 text-sm font-medium shadow-sm transition hover:bg-indigo-700"
-            >
-              ← Back to Tickets
-            </Link>
           </aside>
         </div>
       </div>

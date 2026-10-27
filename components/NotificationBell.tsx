@@ -5,7 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState } from "react";
 import { toast } from "sonner";
-import { FaBell } from "react-icons/fa";
+import {
+  FaBell,
+  FaTicketAlt,
+  FaCommentDots,
+  FaUserPlus,
+  FaUserMinus,
+  FaExchangeAlt,
+} from "react-icons/fa";
 import {
   markAllNotificationsRead,
   markNotificationRead,
@@ -22,12 +29,14 @@ type Notification = {
   createdAt: Date;
 };
 
-const typeIcons: Record<string, string> = {
-  TICKET_CREATED: "TICKET_CREATED",
-  STATUS_UPDATED: "STATUS_UPDATED",
-  NEW_COMMENT: "NEW_COMMENT",
-  TICKET_ASSIGNED: "TICKET_ASSIGNED",
-  TICKET_UNASSIGNED: "TICKET_UNASSIGNED",
+type IconComponent = React.ComponentType<{ className?: string }>;
+
+const typeIcons: Record<string, IconComponent> = {
+  TICKET_CREATED: FaTicketAlt,
+  STATUS_UPDATED: FaExchangeAlt,
+  NEW_COMMENT: FaCommentDots,
+  TICKET_ASSIGNED: FaUserPlus,
+  TICKET_UNASSIGNED: FaUserMinus,
 };
 
 /**
@@ -240,15 +249,21 @@ const NotificationBell = ({
                           />
                           <button
                             type="submit"
-                            className={`flex w-full items-start gap-3 px-4 py-3 text-left transition hover:bg-slate-50 ${
-                              notification.readAt ? "" : "bg-indigo-50/40"
+                            className={`flex w-full items-start gap-3 border-l-2 px-4 py-3 text-left transition hover:bg-slate-50 ${
+                              notification.readAt
+                                ? "border-transparent"
+                                : "border-indigo-600 bg-indigo-50/40"
                             }`}
                           >
                             <span
                               aria-hidden="true"
-                              className="mt-0.5 font-mono text-[10px] text-slate-400"
+                              className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600"
                             >
-                              {typeIcons[notification.type] ?? "EVENT"}
+                              {(() => {
+                                const Icon =
+                                  typeIcons[notification.type] ?? FaBell;
+                                return <Icon className="h-4 w-4" />;
+                              })()}
                             </span>
                             <span className="min-w-0 flex-1">
                               <span className="block text-sm text-slate-900">
