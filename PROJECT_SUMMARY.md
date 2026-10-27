@@ -12,19 +12,19 @@ notifications.
 
 ## 1. Stack
 
-| Layer | Choice |
-|---|---|
-| Framework | Next.js 16 (App Router), React 19 |
-| Language | TypeScript 5 |
-| Styling | Tailwind CSS 4 |
-| Database | PostgreSQL via Prisma 7 (`pg` driver adapter, no ORM-managed URL) |
-| Auth | `jose` JWT in an `auth-token` cookie, `bcryptjs` password hashing |
-| Files | Cloudinary (signed server-side upload, thumbnails, destroy) |
-| Email | Resend + `@react-email/components` templates |
-| Queue | Upstash QStash (`@upstash/qstash` v2) |
-| Errors | Sentry (`@sentry/nextjs`), wrapped in `utils/sentry.ts` |
-| Tests | Vitest 5 |
-| Hosting | Vercel-style `next build`; Sentry tunnel route `/monitoring` |
+| Layer     | Choice                                                            |
+| --------- | ----------------------------------------------------------------- |
+| Framework | Next.js 16 (App Router), React 19                                 |
+| Language  | TypeScript 5                                                      |
+| Styling   | Tailwind CSS 4                                                    |
+| Database  | PostgreSQL via Prisma 7 (`pg` driver adapter, no ORM-managed URL) |
+| Auth      | `jose` JWT in an `auth-token` cookie, `bcryptjs` password hashing |
+| Files     | Cloudinary (signed server-side upload, thumbnails, destroy)       |
+| Email     | Resend + `@react-email/components` templates                      |
+| Queue     | Upstash QStash (`@upstash/qstash` v2)                             |
+| Errors    | Sentry (`@sentry/nextjs`), wrapped in `utils/sentry.ts`           |
+| Tests     | Vitest 5                                                          |
+| Hosting   | Vercel-style `next build`; Sentry tunnel route `/monitoring`      |
 
 Not a monorepo. No CI, no pre-commit hooks, no test coverage tooling.
 
@@ -35,17 +35,17 @@ Not a monorepo. No CI, no pre-commit hooks, no test coverage tooling.
 > On Windows/PowerShell the execution policy blocks `npm.ps1`/`npx.ps1` — **use `npm.cmd` / `npx.cmd`**
 > or the command fails immediately.
 
-| Purpose | Command |
-|---|---|
-| Dev server | `npm.cmd run dev` |
-| Lint | `npm.cmd run lint` |
-| Test | `npm.cmd run test` (`vitest run`) · `npm.cmd run test:watch` |
-| Typecheck | `npx.cmd tsc --noEmit` (no script exists) |
-| Build | `npm.cmd run build` |
-| Regenerate Prisma client | `npx.cmd prisma generate` (also runs on `postinstall`) |
-| New migration | `npx.cmd prisma migrate dev --name <name>` |
-| Full DB reset + seed | `db_fresh.bat` — **destructive**, ~100 s (mostly Cloudinary uploads) |
-| One-off script | `npx.cmd tsx <file>` (`tsx` is not installed locally; npx downloads it) |
+| Purpose                  | Command                                                                 |
+| ------------------------ | ----------------------------------------------------------------------- |
+| Dev server               | `npm.cmd run dev`                                                       |
+| Lint                     | `npm.cmd run lint`                                                      |
+| Test                     | `npm.cmd run test` (`vitest run`) · `npm.cmd run test:watch`            |
+| Typecheck                | `npx.cmd tsc --noEmit` (no script exists)                               |
+| Build                    | `npm.cmd run build`                                                     |
+| Regenerate Prisma client | `npx.cmd prisma generate` (also runs on `postinstall`)                  |
+| New migration            | `npx.cmd prisma migrate dev --name <name>`                              |
+| Full DB reset + seed     | `db_fresh.bat` — **destructive**, ~100 s (mostly Cloudinary uploads)    |
+| One-off script           | `npx.cmd tsx <file>` (`tsx` is not installed locally; npx downloads it) |
 
 **Verification chain: `lint` → `test` → `tsc --noEmit` → `build`.** All four must pass before a
 change is considered done.
@@ -86,17 +86,17 @@ Path alias `@/*` → repo root.
 
 ### Routes and access control
 
-| Route | Guard |
-|---|---|
-| `/` | public landing page |
-| `/login`, `/register` | public |
-| `/tickets` | `requireUser()` — own tickets only for CLIENT |
-| `/tickets/new` | `requireUser()` |
-| `/tickets/[id]` | `requireUser()` + server-side ownership; foreign ticket → `404` for CLIENT |
-| `/dashboard` | `requireRole(SUPPORT_AGENT, ADMIN)`; CLIENT → redirect `/tickets` |
-| `/notifications` | `requireUser()` |
-| `/api/jobs/*` | HMAC signature verification (QStash), not session auth |
-| `/monitoring` | Sentry tunnel |
+| Route                 | Guard                                                                      |
+| --------------------- | -------------------------------------------------------------------------- |
+| `/`                   | public landing page                                                        |
+| `/login`, `/register` | public                                                                     |
+| `/tickets`            | `requireUser()` — own tickets only for CLIENT                              |
+| `/tickets/new`        | `requireUser()`                                                            |
+| `/tickets/[id]`       | `requireUser()` + server-side ownership; foreign ticket → `404` for CLIENT |
+| `/dashboard`          | `requireRole(SUPPORT_AGENT, ADMIN)`; CLIENT → redirect `/tickets`          |
+| `/notifications`      | `requireUser()`                                                            |
+| `/api/jobs/*`         | HMAC signature verification (QStash), not session auth                     |
+| `/monitoring`         | Sentry tunnel                                                              |
 
 ---
 
@@ -119,7 +119,7 @@ User ──< Ticket (owner)            userId        no onDelete
 Enums: `Role` (CLIENT / ADMIN / SUPPORT_AGENT), `TicketStatus` (Open / In_Progress / Resolved /
 Closed), `TicketPriority` (Low / Medium / High / Critical), `NotificationType` (5 values).
 `PasswordResetOtp` stores an **encrypted** code (AES-256-GCM, key from `AUTH_SECRET` via HKDF) —
-not a hash — because the worker must *recover* it to render the email. One row per user
+not a hash — because the worker must _recover_ it to render the email. One row per user
 (unique on `userId`), upserted on request, deleted on success/expiry/exhaustion.
 
 **The delete semantics are deliberate and load-bearing — do not "simplify" them:**
@@ -127,7 +127,7 @@ not a hash — because the worker must *recover* it to render the email. One row
 - Attachments and comments **cascade** with the ticket: destroy the ticket, lose the subtree.
 - `uploadedById` has **no** `onDelete`. Prisma's default for a required relation is
   `ON DELETE RESTRICT`, and that is the point — the uploader is audit data, so deleting a user who
-  once attached a file is *blocked* rather than silently erasing it from a ticket they may not own.
+  once attached a file is _blocked_ rather than silently erasing it from a ticket they may not own.
 - `deletedById` is **SetNull**: removing the moderator must not erase the record of the removal.
 - `CommentAttachment` rows survive a comment's **soft** delete (the thread is frozen, not erased),
   which is exactly why `deleteCommentAttachment` refuses to touch them.
@@ -144,30 +144,30 @@ payload contract is `commentId: number`.
 
 ### Pure, dependency-free modules (unit tested directly)
 
-These exist because the decision-making inside them is *security-relevant*; extracting it is what
+These exist because the decision-making inside them is _security-relevant_; extracting it is what
 makes it testable without a database or a request context.
 
-| Module | Responsibility |
-|---|---|
-| `lib/roles.ts` | `STAFF_ROLES`, `isStaff` — no `next/*` imports, so the QStash worker can use it without pulling `next/headers` into the route bundle |
-| `lib/authorization.ts` | `requireUser`, `requireRole`, `canAccessTicket` (re-exports `lib/roles.ts`) |
-| `lib/notifications.ts` | in-app recipient matrix + copy + dedupe keys |
-| `lib/email.ts` | email recipient resolution + Resend dispatch (worker side) |
-| `lib/assignment-notifications.ts` | which assignment events produce jobs (no-op guard lives here) |
-| `lib/delete-permissions.ts` | `canDeleteUserContent` — author **or** staff, never "the ticket owner" |
-| `lib/dashboard-filters.ts` | `?filter=` whitelist + match/count (unassigned / mine / open) |
-| `lib/dashboard-sort.ts` | `?sort=` whitelist + comparator, total order, non-mutating |
-| `lib/priority.ts` | `PRIORITY_OPTIONS` — hand-written, `satisfies readonly TicketPriority[]` |
-| `lib/attachment-limits.ts` | MIME/size/count limits, importable without pulling the Cloudinary SDK |
-| `lib/otp.ts` | OTP generation, AES-256-GCM encrypt/decrypt, constant-time compare (pure, `node:crypto` only) |
-| `lib/password.ts` | shared password policy (min 8, max 72 bytes) used by register and reset |
+| Module                            | Responsibility                                                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `lib/roles.ts`                    | `STAFF_ROLES`, `isStaff` — no `next/*` imports, so the QStash worker can use it without pulling `next/headers` into the route bundle |
+| `lib/authorization.ts`            | `requireUser`, `requireRole`, `canAccessTicket` (re-exports `lib/roles.ts`)                                                          |
+| `lib/notifications.ts`            | in-app recipient matrix + copy + dedupe keys                                                                                         |
+| `lib/email.ts`                    | email recipient resolution + Resend dispatch (worker side)                                                                           |
+| `lib/assignment-notifications.ts` | which assignment events produce jobs (no-op guard lives here)                                                                        |
+| `lib/delete-permissions.ts`       | `canDeleteUserContent` — author **or** staff, never "the ticket owner"                                                               |
+| `lib/dashboard-filters.ts`        | `?filter=` whitelist + match/count (unassigned / mine / open)                                                                        |
+| `lib/dashboard-sort.ts`           | `?sort=` whitelist + comparator, total order, non-mutating                                                                           |
+| `lib/priority.ts`                 | `PRIORITY_OPTIONS` — hand-written, `satisfies readonly TicketPriority[]`                                                             |
+| `lib/attachment-limits.ts`        | MIME/size/count limits, importable without pulling the Cloudinary SDK                                                                |
+| `lib/otp.ts`                      | OTP generation, AES-256-GCM encrypt/decrypt, constant-time compare (pure, `node:crypto` only)                                        |
+| `lib/password.ts`                 | shared password policy (min 8, max 72 bytes) used by register and reset                                                              |
 
 ### The two "never import me from a client component" modules
 
 - **`lib/cloudinary.ts`** pulls the Cloudinary SDK (and, via `utils/sentry.ts`, `@sentry/nextjs`).
   Client forms duplicate the small limit constants instead. It re-exports everything from
   `lib/attachment-limits.ts` so server-side import sites have a single source.
-- **`@/generated/prisma/client`** as a *value* (e.g. `Object.values(TicketPriority)`) would pull
+- **`@/generated/prisma/client`** as a _value_ (e.g. `Object.values(TicketPriority)`) would pull
   the Prisma runtime into the browser bundle. Hence the hand-written `PRIORITY_OPTIONS`, which
   `lib/priority.test.ts` asserts equals the enum exactly so the duplication cannot drift.
 
@@ -205,7 +205,7 @@ Design points worth preserving:
   swallowed inside `lib/qstash.ts`.
 - **One job per recipient**, not one job with two emails: a single job mailing two people
   re-delivers the first email whenever a retry lands after it succeeded.
-- **Status contract:** `200` = done *or* a permanent no-op (unknown type, deleted ticket,
+- **Status contract:** `200` = done _or_ a permanent no-op (unknown type, deleted ticket,
   malformed-but-authentic body — logged, deliberately not retried); `401` = bad signature;
   `500` = transient, retried 5× with exponential backoff.
 - **Retry safety** is enforced in the database (`skipDuplicates` + the unique index), not only by
@@ -216,14 +216,14 @@ Design points worth preserving:
 This divergence is the design, not a bug. `lib/notifications.ts` documents it as a table; read it
 before "fixing" an inconsistency.
 
-| Event | Email | In-app | Why |
-|---|---|---|---|
-| `TICKET_CREATED` | owner (a receipt) | **all staff** | staff triage new work; the filer knows |
-| `STATUS_UPDATED` | owner | owner **+ assignee** | the assignee is working it |
-| `NEW_COMMENT` (staff) | owner | owner | same |
-| `NEW_COMMENT` (client) | assignee, else **nobody** | assignee, else **all staff** | an unassigned ticket has no address to mail, but an in-app row needs none — this is where email backlog #2 stops being a hole |
-| `TICKET_ASSIGNED` | assignee | assignee, unless they own the ticket | never ping someone about their own ticket |
-| `TICKET_UNASSIGNED` | previous assignee | previous assignee | |
+| Event                  | Email                     | In-app                               | Why                                                                                                                           |
+| ---------------------- | ------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `TICKET_CREATED`       | owner (a receipt)         | **all staff**                        | staff triage new work; the filer knows                                                                                        |
+| `STATUS_UPDATED`       | owner                     | owner **+ assignee**                 | the assignee is working it                                                                                                    |
+| `NEW_COMMENT` (staff)  | owner                     | owner                                | same                                                                                                                          |
+| `NEW_COMMENT` (client) | assignee, else **nobody** | assignee, else **all staff**         | an unassigned ticket has no address to mail, but an in-app row needs none — this is where email backlog #2 stops being a hole |
+| `TICKET_ASSIGNED`      | assignee                  | assignee, unless they own the ticket | never ping someone about their own ticket                                                                                     |
+| `TICKET_UNASSIGNED`    | previous assignee         | previous assignee                    |                                                                                                                               |
 
 Invariants: the **actor is never notified**; a **soft-deleted comment notifies nobody** (the
 message is retracted, so announcing it would be untrue).
@@ -262,7 +262,7 @@ options over five columns) are plain `<Link>`s driven by URL params — bookmark
 query values are unit tested rather than buried in JSX.
 
 **In-app notifications.** Bell + unread badge in the Navbar, newest-20 panel grouped by day, plus
-`/notifications` for full history, with mark-read and mark-all-read. Recipients resolve at *publish*
+`/notifications` for full history, with mark-read and mark-all-read. Recipients resolve at _publish_
 time to concrete user ids; the worker is a dumb writer.
 
 ---
@@ -275,20 +275,20 @@ Strategy: mock `@/lib/prisma` rather than run Postgres. The bug class this repo 
 authorization decisions, validation branches, no-op guards, `revalidatePath` targets, notification
 recipient resolution, published job payloads — is covered in milliseconds with no infrastructure.
 
-| File | Covers |
-|---|---|
-| `actions/ticket.actions.test.ts` | `addTicketComment` (validation, full role/closed matrix, upload + transaction paths), `assignTicket`, `createTicket`, both delete actions |
-| `actions/auth.actions.test.ts` | reset flow: no enumeration (message + timing + publish), attempt ceiling, expiry, single use, no session issued, credential hygiene |
-| `app/route-shape.test.ts` | `isValidJob` shape gate, incl. the ticketless `PASSWORD_RESET_OTP` case |
-| `lib/email.test.ts` | recipient resolution for every job type, "notify nobody" rules, Resend error → throw so QStash retries |
-| `lib/notifications.test.ts` | in-app recipient matrix, content, dedupe keys |
-| `lib/dashboard-sort.test.ts` | total order, non-mutation, nulls-last in both directions, numeric collation |
-| `lib/dashboard-filters.test.ts` | whitelist parsing, exact `open` semantics, non-mutation |
-| `lib/authorization.test.ts`, `lib/delete-permissions.test.ts` | the security primitives |
-| `lib/assignment-notifications.test.ts`, `lib/qstash.test.ts` | job construction and the best-effort swallow |
-| `prisma/seed-data.test.ts`, `prisma/seed-files.test.ts` | planner invariants + generated bytes vs declared MIME |
-| `utils/ui.test.ts`, `lib/priority.test.ts`, `lib/cloudinary.test.ts`, `lib/string-format.test.ts` | exhaustive enum styling, option-list drift, validation |
-| `test-utils/safety-rail.test.ts` | keeps the dead-socket `DATABASE_URL` override from being deleted |
+| File                                                                                              | Covers                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `actions/ticket.actions.test.ts`                                                                  | `addTicketComment` (validation, full role/closed matrix, upload + transaction paths), `assignTicket`, `createTicket`, both delete actions |
+| `actions/auth.actions.test.ts`                                                                    | reset flow: no enumeration (message + timing + publish), attempt ceiling, expiry, single use, no session issued, credential hygiene       |
+| `app/route-shape.test.ts`                                                                         | `isValidJob` shape gate, incl. the ticketless `PASSWORD_RESET_OTP` case                                                                   |
+| `lib/email.test.ts`                                                                               | recipient resolution for every job type, "notify nobody" rules, Resend error → throw so QStash retries                                    |
+| `lib/notifications.test.ts`                                                                       | in-app recipient matrix, content, dedupe keys                                                                                             |
+| `lib/dashboard-sort.test.ts`                                                                      | total order, non-mutation, nulls-last in both directions, numeric collation                                                               |
+| `lib/dashboard-filters.test.ts`                                                                   | whitelist parsing, exact `open` semantics, non-mutation                                                                                   |
+| `lib/authorization.test.ts`, `lib/delete-permissions.test.ts`                                     | the security primitives                                                                                                                   |
+| `lib/assignment-notifications.test.ts`, `lib/qstash.test.ts`                                      | job construction and the best-effort swallow                                                                                              |
+| `prisma/seed-data.test.ts`, `prisma/seed-files.test.ts`                                           | planner invariants + generated bytes vs declared MIME                                                                                     |
+| `utils/ui.test.ts`, `lib/priority.test.ts`, `lib/cloudinary.test.ts`, `lib/string-format.test.ts` | exhaustive enum styling, option-list drift, validation                                                                                    |
+| `test-utils/safety-rail.test.ts`                                                                  | keeps the dead-socket `DATABASE_URL` override from being deleted                                                                          |
 
 Safety rails and non-obvious mechanics:
 
@@ -354,14 +354,14 @@ never touch real uploads in `quickticket/tickets`.
 
 `.env` is gitignored but populated locally.
 
-| Variable | Purpose |
-|---|---|
-| `DATABASE_URL` | Postgres connection string (Prisma 7 config: `prisma7.config.ts`) |
-| `AUTH_SECRET` | signs the `jose` JWT |
-| `CLOUDINARY_CLOUD_NAME` / `_API_KEY` / `_API_SECRET` | ticket + comment attachments |
-| `QSTASH_URL` / `_TOKEN` / `_CURRENT_SIGNING_KEY` / `_NEXT_SIGNING_KEY` | worker queue + HMAC verification (both keys, so rotation is safe) |
-| `RESEND_API_KEY` / `EMAIL_FROM` / `APP_URL` | email delivery; `APP_URL` must be reachable by QStash (use an ngrok tunnel while testing locally) |
-| `OTP_DEV_REVEAL` | dev-only OTP echo on screen (`1` + `NODE_ENV !== production`); Resend testing mode only delivers to the account owner |
+| Variable                                                               | Purpose                                                                                                               |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                         | Postgres connection string (Prisma 7 config: `prisma7.config.ts`)                                                     |
+| `AUTH_SECRET`                                                          | signs the `jose` JWT                                                                                                  |
+| `CLOUDINARY_CLOUD_NAME` / `_API_KEY` / `_API_SECRET`                   | ticket + comment attachments                                                                                          |
+| `QSTASH_URL` / `_TOKEN` / `_CURRENT_SIGNING_KEY` / `_NEXT_SIGNING_KEY` | worker queue + HMAC verification (both keys, so rotation is safe)                                                     |
+| `RESEND_API_KEY` / `EMAIL_FROM` / `APP_URL`                            | email delivery; `APP_URL` must be reachable by QStash (use an ngrok tunnel while testing locally)                     |
+| `OTP_DEV_REVEAL`                                                       | dev-only OTP echo on screen (`1` + `NODE_ENV !== production`); Resend testing mode only delivers to the account owner |
 
 Sentry's DSN is hardcoded in `sentry.*.config.ts`. Resend's `onboarding@resend.dev` only delivers
 to the Resend account owner's address — a verified domain is required for real use.
@@ -381,7 +381,7 @@ Scoped out deliberately, not regressions. Full lists with rationale live in `AGE
 - **Notifications:** server-rendered count refreshed on mutation — no polling, so a badge can go
   stale; a staff comment on someone else's ticket generates two emails (comment + status) by
   design.
-- **Auth:** no throttle on *requesting* a reset code (bounds guessing, not sending); existing
+- **Auth:** no throttle on _requesting_ a reset code (bounds guessing, not sending); existing
   sessions are not revoked by a reset (stateless JWT, no session table); no in-app role
   management. See the Auth backlog in `AGENTS.md`.
 - **Ops:** no CI running the test suite; `getTicketById` swallows errors as `404`, so a failing
